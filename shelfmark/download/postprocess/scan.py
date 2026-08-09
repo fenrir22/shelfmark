@@ -31,7 +31,15 @@ def get_supported_formats(content_type: str | None = None) -> list[str]:
     """Return supported file extensions for the requested content type."""
     if check_audiobook(content_type):
         return get_supported_audiobook_formats()
+    if content_type == "manuale":
+        return _MANUAL_FORMATS
     return get_book_formats()
+
+
+_MANUAL_FORMATS = [
+    "pdf", "epub", "mobi", "azw3", "fb2", "djvu", "cbz", "cbr",
+    "zip", "rar", "7z", "mod",
+]
 
 
 def _format_not_supported_error(rejected_files: list[Path], task: DownloadTask) -> str:
