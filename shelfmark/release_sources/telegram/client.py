@@ -308,7 +308,19 @@ class TelegramClientManager:
             self._status = "disconnected"
 
     async def _resolve_bot_entity_async(self, bot_username: str) -> Any:
-        return await self._client.get_entity(bot_username)
+        entity_ref: Any = bot_username
+        if isinstance(bot_username, str):
+            stripped = bot_username.strip()
+            if stripped.startswith("https://t.me/c/"):
+                # Private chat link: t.me/c/<chat_id>[/<message_id>]
+                import re
+
+                match = re.match(r"https://t\.me/c/(\d+)(?:/(\d+))?", stripped)
+                if match:
+                    entity_ref = int(f"-100{match.group(1)}")
+            elif stripped.lstrip("-").isdigit():
+                entity_ref = int(stripped)
+        return await self._client.get_entity(entity_ref)
 
     def resolve_bot_entity(self, bot_username: str) -> Any:
         if not self.is_connected:
@@ -342,6 +354,184 @@ class TelegramClientManager:
             return self._run_sync(self._get_message_async(chat_id, message_id))
         except Exception:
             logger.exception("Failed to get message %s/%s", chat_id, message_id)
+            return None
+
+    async def _search_messages_async(
+        self,
+        entity: Any,
+        query: str,
+        limit: int = 50,
+        reply_to: int | None = None,
+        add_offset: int = 0,
+    ) -> list:
+        # Only search file/media messages (documents), never chat discussion.
+        from telethon.tl.types import InputMessagesFilterDocument
+
+        document_filter = InputMessagesFilterDocument()
+        if reply_to is not None:
+            # Telethon ignores the server-side full-text search when scoping to a
+            # forum topic (the topic filter overrides it). Fetch the topic's
+            # documents and filter locally against message text and file names.
+            results = []
+            current_offset = 0
+            fetch_limit = max(limit, 100)
+            while len(results) < max(limit, 100):
+                batch = await self._client.get_messages(
+                    entity,
+                    reply_to=reply_to,
+                    filter=document_filter,
+                    limit=fetch_limit,
+                    offset_id=current_offset,
+                )
+                if not batch:
+                    break
+                results.extend(batch)
+                if len(batch) < fetch_limit:
+                    break
+                current_offset = batch[-1].id
+            return self._filter_messages_local(results, query, limit)
+        if add_offset > 0:
+            from telethon.tl.functions.messages import SearchRequest
+            from telethon.tl.types import InputPeerChannel, InputPeerChat, InputPeerUser
+            from telethon import utils
+
+            peer = utils.get_input_peer(entity)
+            request = SearchRequest(
+                peer=peer,
+                q=query,
+                filter=document_filter,
+                min_date=None,
+                max_date=None,
+                offset_id=0,
+                add_offset=add_offset,
+                limit=limit,
+                max_id=0,
+                min_id=0,
+                hash=0,
+            )
+            result = await self._client(request)
+            return result.messages
+        return await self._client.get_messages(
+            entity,
+            search=query,
+            filter=document_filter,
+            limit=limit,
+        )
+
+    @staticmethod
+    def _message_matches_query(message: Any, query: str) -> bool:
+        if not query:
+            return True
+        needle = query.strip().lower()
+        text = (message.text or "").lower()
+        if needle in text:
+            return True
+        document = getattr(message, "document", None)
+        if document is None:
+            return False
+        for attr in getattr(document, "attributes", []):
+            file_name = getattr(attr, "file_name", None)
+            if file_name and needle in file_name.lower():
+                return True
+        return False
+
+    def _filter_messages_local(self, messages: list, query: str, limit: int) -> list:
+        matched = [
+            m for m in messages if self._message_matches_query(m, query)
+        ]
+        return matched[:limit]
+
+    def search_messages(
+        self,
+        entity: Any,
+        query: str,
+        limit: int = 50,
+        reply_to: int | None = None,
+        add_offset: int = 0,
+    ) -> list:
+        """Search a chat's message history without sending any message.
+
+        Uses Telegram server-side full-text search, which covers message text
+        and document file names. Only reads existing history. When ``reply_to``
+        is a forum topic root message id, the search is limited to that topic.
+        """
+        if not self.is_connected:
+            return []
+        try:
+            return self._run_sync(
+                self._search_messages_async(entity, query, limit, reply_to, add_offset),
+                timeout=TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("Failed to search messages with query: %s", query)
+            return []
+
+    async def _find_forum_topic_async(self, entity: Any, topic_title: str) -> int | None:
+        """Find a forum topic's root message id by its title."""
+        from telethon.tl.functions.messages import GetForumTopicsRequest
+
+        query = topic_title.strip().lower()
+        offset_date = None
+        offset_id = 0
+        offset_topic = 0
+        for _ in range(20):
+            result = await self._client(
+                GetForumTopicsRequest(
+                    peer=entity,
+                    q=topic_title.strip(),
+                    offset_date=offset_date,
+                    offset_id=offset_id,
+                    offset_topic=offset_topic,
+                    limit=100,
+                )
+            )
+            for topic in result.topics:
+                action = getattr(topic, "action", None)
+                title = (getattr(action, "title", "") or "").strip()
+                if title.lower() == query:
+                    return getattr(topic, "id", None)
+            if len(result.topics) < 100:
+                break
+            last = result.topics[-1]
+            offset_id = getattr(last, "id", 0)
+            offset_topic = offset_id
+            offset_date = getattr(last, "date", None)
+        return None
+
+    def find_forum_topic(self, entity: Any, topic_title: str) -> int | None:
+        """Find a forum topic's root message id by its title."""
+        if not self.is_connected:
+            return None
+        try:
+            return self._run_sync(
+                self._find_forum_topic_async(entity, topic_title),
+                timeout=TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("Failed to find forum topic: %s", topic_title)
+            return None
+
+    async def _resolve_dialog_by_title_async(self, title: str) -> Any | None:
+        wanted = title.strip().lower()
+        async for dialog in self._client.iter_dialogs():
+            if (dialog.title or "").strip().lower() == wanted:
+                return dialog.entity
+        return None
+
+    def resolve_dialog_by_title(self, title: str) -> Any | None:
+        """Resolve a chat/channel/group by its display title.
+
+        Useful when only the group's display name is known (no username).
+        """
+        if not self.is_connected:
+            return None
+        try:
+            return self._run_sync(
+                self._resolve_dialog_by_title_async(title),
+                timeout=TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("Failed to resolve dialog by title: %s", title)
             return None
 
     async def _wait_for_response_async(

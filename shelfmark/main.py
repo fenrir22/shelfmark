@@ -1222,6 +1222,8 @@ def api_config() -> Response | tuple[Response, int]:
             ),
             "settings_enabled": _is_config_dir_writable(),
             "onboarding_complete": _get_onboarding_complete(),
+            "telegram_group_enabled": bool(app_config.get("TELEGRAM_GROUP_ENABLED", False))
+            and bool(str(app_config.get("TELEGRAM_GROUP_USERNAME", "") or "").strip()),
             # Default sort orders
             "default_sort": app_config.get(
                 "AA_DEFAULT_SORT", "relevance"
@@ -2911,8 +2913,11 @@ def api_releases() -> Response | tuple[Response, int]:
                     content_type,
                 )
 
+                search_kwargs = {"expand_search": expand_search, "content_type": content_type}
+                if source_name == "telegram_group" and offset_id:
+                    search_kwargs["add_offset"] = offset_id
                 releases = source.search(
-                    search_book, plan, expand_search=expand_search, content_type=content_type
+                    search_book, plan, **search_kwargs
                 )
             except ValueError:
                 return None, [], f"Unknown source: {source_name}"
@@ -2930,6 +2935,7 @@ def api_releases() -> Response | tuple[Response, int]:
         title_param = request.args.get("title", "").strip()
         author_param = request.args.get("author", "").strip()
         expand_search = request.args.get("expand_search", "").lower() == "true"
+        offset_id = int(request.args.get("offset", "0") or "0")
         # Accept language codes for filtering (comma-separated)
         languages_param = request.args.get("languages", "").strip()
         languages = (

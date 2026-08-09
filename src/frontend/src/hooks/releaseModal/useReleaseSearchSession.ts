@@ -62,6 +62,7 @@ interface UseReleaseSearchSessionReturn {
   applyCurrentFilters: () => void;
   runManualSearch: () => void;
   expandSearch: () => Promise<void>;
+  loadMore: () => Promise<void>;
   isIndexerFilterInitialized: (tabName: string) => boolean;
 }
 
@@ -212,6 +213,7 @@ export function useReleaseSearchSession(
         force?: boolean;
         supportsIndexerFilter?: boolean;
         manualQueryOverride?: string;
+        loadMoreOffset?: number;
       } = {},
     ): Promise<void> => {
       const {
@@ -220,6 +222,7 @@ export function useReleaseSearchSession(
         force = false,
         supportsIndexerFilter = false,
         manualQueryOverride,
+        loadMoreOffset,
       } = options;
 
       if (!book.provider || !book.provider_id || !tabName) {
@@ -270,6 +273,7 @@ export function useReleaseSearchSession(
           contentType,
           currentManualQuery,
           indexersParam,
+          loadMoreOffset,
         );
 
         if (expandSearch) {
@@ -575,6 +579,32 @@ export function useReleaseSearchSession(
     });
   }, [activeTab, book.provider, book.provider_id, fetchReleaseResults, releasesBySource]);
 
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (!book.provider || !book.provider_id || !activeTab) {
+      return;
+    }
+
+    const currentReleases = releasesBySource[activeTab]?.releases ?? [];
+    if (currentReleases.length === 0) {
+      return;
+    }
+
+    const offset = currentReleases.length;
+
+    const supportsIndexerFilter =
+      releasesBySource[activeTab]?.column_config?.supported_filters?.includes('indexer') ?? false;
+
+    setLoadingBySource((prev) => ({ ...prev, [activeTab]: true }));
+
+    await fetchReleaseResults(activeTab, {
+      force: true,
+      expandSearch: true,
+      useFilters: false,
+      supportsIndexerFilter,
+      loadMoreOffset: offset,
+    });
+  }, [activeTab, book.provider, book.provider_id, fetchReleaseResults, releasesBySource]);
+
   return {
     availableSources,
     sourcesLoading,
@@ -600,6 +630,7 @@ export function useReleaseSearchSession(
     applyCurrentFilters,
     runManualSearch,
     expandSearch,
+    loadMore,
     isIndexerFilterInitialized,
   };
 }

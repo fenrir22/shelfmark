@@ -293,3 +293,62 @@ def telegram_settings() -> list[SettingsField]:
             callback=_clear_telegram_cache,
         ),
     ]
+
+
+@register_settings(
+    name="telegram_group",
+    display_name="Telegram Group",
+    icon="users",
+    order=58,
+)
+def telegram_group_settings() -> list[SettingsField]:
+    return [
+        HeadingField(
+            key="heading",
+            title="Telegram Group (silent search)",
+            description=(
+                "Search a Telegram group's existing message history for documents (PDFs, ebooks, "
+                "manuals) and download them. This mode NEVER sends any message to the group: "
+                "members cannot tell a bot is listening. Uses the same Telegram account as the "
+                "Telegram source above (you must be a member of the group)."
+            ),
+        ),
+        CheckboxField(
+            key="TELEGRAM_GROUP_ENABLED",
+            label="Enable Telegram Group search",
+            default=False,
+            description="Enable silent search of a Telegram group's history.",
+        ),
+        TextField(
+            key="TELEGRAM_GROUP_USERNAME",
+            label="Group username",
+            placeholder="e.g. @rpg_manuals",
+            description=(
+                "The group to search. Use the username (with or without @), a numeric chat ID, "
+                "an invite link, or the group's display title (e.g. 'The Amber Room request "
+                "and submissions'). The connected account must already be a member of the group."
+            ),
+            required=True,
+            env_supported=True,
+        ),
+        TextField(
+            key="TELEGRAM_GROUP_CHANNEL",
+            label="Channel / topic name",
+            placeholder="e.g. request and submission",
+            description=(
+                "Optional: the channel or forum topic inside the group that contains the files "
+                "(e.g. '#request and submission'). Only that channel/topic is searched. "
+                "Leave empty to search the whole group."
+            ),
+            required=False,
+            env_supported=True,
+        ),
+        TextField(
+            key="TELEGRAM_GROUP_SEARCH_LIMIT",
+            label="Max results",
+            placeholder="50",
+            description="Maximum number of matching messages to consider per search.",
+            required=False,
+            env_supported=True,
+        ),
+    ]

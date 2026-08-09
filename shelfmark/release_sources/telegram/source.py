@@ -6,7 +6,9 @@ Searches a Telegram bot for ebook and audiobook releases via MTProto user client
 from __future__ import annotations
 
 import hashlib
+import re
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from shelfmark.api.websocket import ws_manager
@@ -410,3 +412,218 @@ class TelegramSource(ReleaseSource):
     @staticmethod
     def _filter_by_content_type(releases: list[Release], requested: str) -> list[Release]:
         return [r for r in releases if (r.content_type or "ebook") == requested]
+
+
+def _humanize_size(size_bytes: int | None) -> str | None:
+    if not size_bytes or size_bytes <= 0:
+        return None
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(size_bytes)
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(value)} B"
+    return f"{value:.1f} {units[unit_index]}"
+
+
+@register_source("telegram_group")
+class TelegramGroupSource(TelegramSource):
+    """Silent Telegram group search.
+
+    Searches a group's existing message history for documents and downloads
+    them directly. NEVER sends any message to the group, so members cannot
+    tell a bot is listening.
+    """
+
+    name = "telegram_group"
+    display_name = "Telegram Group"
+    supported_content_types: ClassVar[list[str]] = ["manuale", "ebook"]
+
+    def is_available(self) -> bool:
+        enabled = _config_bool("TELEGRAM_GROUP_ENABLED", False)
+        if not enabled:
+            return False
+        group = _config_text("TELEGRAM_GROUP_USERNAME")
+        return bool(group) and client_manager.is_connected
+
+    def get_column_config(self) -> ReleaseColumnConfig:
+        return ReleaseColumnConfig(
+            columns=[
+                ColumnSchema(
+                    key="format",
+                    label="Format",
+                    render_type=ColumnRenderType.BADGE,
+                    color_hint=ColumnColorHint(type="map", value="format"),
+                    width="70px",
+                    uppercase=True,
+                    sortable=True,
+                ),
+                ColumnSchema(
+                    key="size",
+                    label="Size",
+                    render_type=ColumnRenderType.SIZE,
+                    width="80px",
+                    sortable=True,
+                    sort_key="size_bytes",
+                ),
+            ],
+            grid_template="minmax(0,2fr) 70px 80px",
+            leading_cell=LeadingCellConfig(type=LeadingCellType.NONE),
+            cache_ttl_seconds=1800,
+            supported_filters=["format"],
+        )
+
+    def search(
+        self,
+        book: BookMetadata,
+        plan: ReleaseSearchPlan,
+        *,
+        expand_search: bool = False,
+        content_type: str = "ebook",
+        add_offset: int = 0,
+    ) -> list[Release]:
+        if not self.is_available():
+            logger.debug("Telegram group source is not available, skipping search")
+            return []
+
+        # Telegram group silent search is meant for manuals/documents (ebooks)
+        if content_type not in {"manuale", "ebook"}:
+            logger.debug(
+                "Telegram group source only supports manuals/ebooks, skipping %s search",
+                content_type,
+            )
+            return []
+
+        query = plan.primary_query or self._build_query(book)
+        if not query:
+            logger.warning("No search query could be built for Telegram group")
+            return []
+
+        group_raw = _config_text("TELEGRAM_GROUP_USERNAME")
+        channel = _config_text("TELEGRAM_GROUP_CHANNEL")
+        query_key = (
+            f"telegram_group:{group_raw.casefold()}:{channel.casefold()}:{query.strip().casefold()}"
+        )
+
+        group = group_raw
+        link_topic_id: int | None = None
+        match = re.match(r"https://t\.me/c/(\d+)(?:/(\d+))?", group.strip())
+        if match:
+            group = f"-100{match.group(1)}"
+            if match.group(2):
+                link_topic_id = int(match.group(2))
+
+        if not expand_search and add_offset == 0:
+            cached = get_cached_results(query_key)
+            if cached:
+                _emit_status("Using cached results", phase="complete")
+                return self._filter_by_content_type(cached["releases"], content_type)
+
+        _enforce_rate_limit()
+
+        try:
+            _emit_status("Searching Telegram group history...", phase="searching")
+
+            group_entity = client_manager.resolve_bot_entity(group)
+            if group_entity is None:
+                group_entity = client_manager.resolve_dialog_by_title(group)
+            if group_entity is None:
+                _emit_status(f"Group not found: {group_raw}", phase="error")
+                logger.warning("Could not resolve Telegram group: %s", group_raw)
+                return []
+
+            search_limit = _config_int("TELEGRAM_GROUP_SEARCH_LIMIT", 50)
+
+            reply_to: int | None = None
+            if channel and channel.lstrip("-").isdigit():
+                reply_to = int(channel)
+                logger.info("Searching in channel/topic id %s", reply_to)
+            elif channel:
+                topic_id = client_manager.find_forum_topic(group_entity, channel)
+                if topic_id is not None:
+                    logger.info("Searching in forum topic '%s' (id %s)", channel, topic_id)
+                    _emit_status(f'Searching in topic "{channel}"...', phase="searching")
+                    reply_to = topic_id
+                else:
+                    logger.warning(
+                        "Forum topic '%s' not found in %s, searching whole group", channel, group
+                    )
+            elif link_topic_id is not None:
+                logger.info("Searching in linked topic id %s", link_topic_id)
+                reply_to = link_topic_id
+
+            messages = client_manager.search_messages(
+                group_entity, query, limit=search_limit, reply_to=reply_to,
+                add_offset=add_offset,
+            )
+
+            releases = self._convert_messages_to_releases(messages, content_type)
+            releases = self._filter_by_content_type(releases, content_type)
+
+            cache_results(query_key, query, releases)
+
+            _emit_status(f"Found {len(releases)} results", phase="complete")
+        except Exception:
+            logger.exception("Telegram group search failed")
+            _emit_status("Search failed", phase="error")
+            return []
+        else:
+            return releases
+
+    def _convert_messages_to_releases(self, messages: list, content_type: str = "manuale") -> list[Release]:
+        releases = []
+        for msg in messages:
+            document = getattr(msg, "document", None)
+            if document is None:
+                continue
+
+            file_name = None
+            for attr in getattr(document, "attributes", []) or []:
+                if getattr(attr, "file_name", None):
+                    file_name = attr.file_name
+                    break
+
+            title = file_name or getattr(msg, "text", "") or "Unknown"
+            extension = Path(file_name).suffix.lstrip(".").lower() if file_name else None
+
+            chat_id = getattr(msg, "chat_id", None)
+            if chat_id is None and getattr(msg, "chat", None) is not None:
+                chat_id = msg.chat.id
+            if chat_id is None:
+                continue
+
+            message_id = getattr(msg, "id", None)
+            if message_id is None:
+                continue
+
+            document_id = str(getattr(document, "id", ""))
+
+            releases.append(
+                Release(
+                    source="telegram_group",
+                    source_id=self._build_group_source_id(chat_id, message_id, document_id),
+                    title=str(title),
+                    format=extension or "file",
+                    size=_humanize_size(getattr(document, "size", None)),
+                    size_bytes=getattr(document, "size", None),
+                    protocol=ReleaseProtocol.TELEGRAM,
+                    indexer="Telegram Group",
+                    content_type=content_type,
+                    extra={
+                        "message_id": message_id,
+                        "chat_id": chat_id,
+                        "document_id": document_id,
+                        "has_document": True,
+                        "file_name": file_name or str(title),
+                    },
+                )
+            )
+
+        return releases
+
+    @staticmethod
+    def _build_group_source_id(chat_id: int, message_id: int, document_id: str) -> str:
+        raw = f"tg:{chat_id}:{message_id}:{document_id}"
+        return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()

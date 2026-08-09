@@ -807,6 +807,7 @@ const ReleaseModalSession = ({
     applyCurrentFilters,
     runManualSearch,
     expandSearch,
+    loadMore,
     isIndexerFilterInitialized,
   } = useReleaseSearchSession({
     book,
@@ -1041,17 +1042,19 @@ const ReleaseModalSession = ({
 
     // First, filter
     let filtered = releases.filter((r) => {
-      // Format filtering
-      const releaseFormats = getReleaseFormats(r);
+      // Format filtering — skip for manuali (file types differ from ebooks/audiobooks)
+      if (contentType !== 'manuale') {
+        const releaseFormats = getReleaseFormats(r);
 
-      if (formatFilter) {
-        // User selected a specific format - match if any format on the release matches
-        if (!releaseFormats.includes(selectedFormat)) return false;
-      } else if (releaseFormats.length > 0) {
-        // No specific filter - show only releases that include at least one supported format
-        if (!releaseFormats.some((fmt) => effectiveLower.has(fmt))) return false;
+        if (formatFilter) {
+          // User selected a specific format - match if any format on the release matches
+          if (!releaseFormats.includes(selectedFormat)) return false;
+        } else if (releaseFormats.length > 0) {
+          // No specific filter - show only releases that include at least one supported format
+          if (!releaseFormats.some((fmt) => effectiveLower.has(fmt))) return false;
+        }
+        // Releases with no format info pass through when no filter is set (show all)
       }
-      // Releases with no format info pass through when no filter is set (show all)
 
       // Language filtering - use r.language when provided by enriched indexers
       // Releases with no language (null/undefined) always pass
@@ -2191,6 +2194,22 @@ const ReleaseModalSession = ({
                         />
                       ))}
                     </div>
+                    {/* Load more */}
+                    {!currentTabLoading &&
+                      filteredReleases.length > 0 &&
+                      activeTab === 'telegram_group' && (
+                        <div className="animate-pop-up py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void loadMore();
+                            }}
+                            className="hover-action rounded-full px-3 py-1.5 text-sm text-zinc-500 transition-all duration-200 dark:text-zinc-400"
+                          >
+                            {t('load_more')}
+                          </button>
+                        </div>
+                      )}
                     {/* Action button - plugin-defined or default expand search */}
                     {!currentTabLoading &&
                       (columnConfig.action_button ||

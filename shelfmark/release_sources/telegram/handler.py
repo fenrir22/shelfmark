@@ -257,3 +257,12 @@ class TelegramDownloadHandler(DownloadHandler):
                 "has_document": extra.get("has_document"),
             },
         }
+
+
+@register_handler("telegram_group")
+class TelegramGroupDownloadHandler(TelegramDownloadHandler):
+    """Download handler for silent Telegram group search results.
+
+    Documents found in group history carry the document directly, so the
+    shared download logic (resolve message -> download media) applies as-is.
+    """

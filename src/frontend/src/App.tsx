@@ -320,19 +320,30 @@ function App() {
 
   const requestRoleIsAdmin = requestPolicy?.is_admin ?? false;
 
+  // Whether the Telegram Group (manuals) source is configured on the server.
+  const [telegramGroupEnabled, setTelegramGroupEnabled] = useState(false);
+
   // Compute which content types this user is allowed to search for.
   // If a content type's default policy mode is 'blocked', hide it from the dropdown.
   const allowedContentTypes = useMemo((): ContentType[] => {
+    const types: ContentType[] = [];
     // If policy not loaded yet or user is admin, allow everything
     if (!requestPolicy || requestRoleIsAdmin || !requestsPolicyEnabled) {
-      return ['ebook', 'audiobook'];
+      types.push('ebook', 'audiobook');
+    } else {
+      if (getDefaultMode('ebook') !== 'blocked') types.push('ebook');
+      if (getDefaultMode('audiobook') !== 'blocked') types.push('audiobook');
     }
-    const types: ContentType[] = [];
-    if (getDefaultMode('ebook') !== 'blocked') types.push('ebook');
-    if (getDefaultMode('audiobook') !== 'blocked') types.push('audiobook');
-    // If both are blocked, still show both (user can see results, just can't download)
+    if (telegramGroupEnabled) types.push('manuale');
+    // If everything is blocked, still show the base types (user can see results, just can't download)
     return types.length > 0 ? types : ['ebook', 'audiobook'];
-  }, [requestPolicy, requestRoleIsAdmin, requestsPolicyEnabled, getDefaultMode]);
+  }, [
+    requestPolicy,
+    requestRoleIsAdmin,
+    requestsPolicyEnabled,
+    getDefaultMode,
+    telegramGroupEnabled,
+  ]);
 
   const effectiveContentType = useMemo(
     () =>
@@ -815,6 +826,7 @@ function App() {
           metadata_default_sort: resolvedMetadataDefaultSort,
           metadata_sort_options: nextMetadataConfig?.sort_options ?? cfg.metadata_sort_options,
         });
+        setTelegramGroupEnabled(cfg.telegram_group_enabled === true);
         setMetadataProviders(metadataProviderState.providers);
         setConfiguredMetadataProvider(metadataProviderState.configured_provider);
         setConfiguredAudiobookMetadataProvider(metadataProviderState.configured_provider_audiobook);
@@ -1063,8 +1075,10 @@ function App() {
   }, [effectiveContentType, getDefaultMode]);
 
   const getCombinedSelectionPhases = useCallback(
-    (state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>): ContentType[] => {
-      const phases: ContentType[] = [];
+    (
+      state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>,
+    ): Array<'ebook' | 'audiobook'> => {
+      const phases: Array<'ebook' | 'audiobook'> = [];
       if (state.ebookMode !== 'request_book') {
         phases.push('ebook');
       }
@@ -2301,6 +2315,10 @@ function App() {
 
   // Unified search dispatch: intercepts manual search mode, otherwise runs normal search
   const handleSearchDispatch = useCallback(() => {
+    if (contentType === 'manuale') {
+      handleManualSearch();
+      return;
+    }
     if (activeQueryOption?.source === 'manual') {
       handleManualSearch();
       return;
@@ -2327,6 +2345,7 @@ function App() {
     advancedFilters.sort,
     activeQueryUsesSeriesBrowse,
     buildCurrentSearchRequest,
+    contentType,
     effectiveSearchMode,
     handleManualSearch,
     runSearchWithPolicyRefresh,

@@ -126,7 +126,9 @@ const getDefaultPlaceholder = (
 
   if (!activeQueryTarget || activeQueryTarget.source === 'general') {
     if (isCombinedMode) return t('search_books_audiobooks');
-    return contentType === 'ebook' ? t('search_books') : t('search_audiobooks');
+    if (contentType === 'ebook') return t('search_books');
+    if (contentType === 'manuale') return t('search_manuals');
+    return t('search_audiobooks');
   }
 
   if (activeQueryTarget.source === 'manual') {
@@ -359,6 +361,9 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       placeholder,
       combinedMode,
     );
+    const effectiveSearchButtonLabel = searchButtonLabel === t('search_books') && contentType === 'manuale'
+      ? t('search_manuals')
+      : searchButtonLabel;
     const effectiveInputAriaLabel = activeTarget
       ? `${inputAriaLabel}: ${activeTarget.label}`
       : inputAriaLabel;
@@ -543,6 +548,9 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       selectorIcon = <BothIcon />;
     } else if (contentType === 'ebook') {
       selectorContentTypeLabel = t('books');
+      selectorIcon = <BookIcon />;
+    } else if (contentType === 'manuale') {
+      selectorContentTypeLabel = t('manuals');
       selectorIcon = <BookIcon />;
     }
 
@@ -747,6 +755,25 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                             )}
                             <span>{t('audiobooks')}</span>
                           </button>
+                          {allowedContentTypes?.includes('manuale') && (
+                            <button
+                              type="button"
+                              onClick={() => handleContentTypeSelect('manuale')}
+                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                                contentType === 'manuale'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'hover-surface'
+                              }`}
+                              style={
+                                contentType === 'manuale'
+                                  ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                                  : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                              }
+                            >
+                              {contentType === 'manuale' ? <CheckIcon /> : <BookIcon />}
+                              <span>{t('manuals')}</span>
+                            </button>
+                          )}
                         </div>
                         {onCombinedModeChange &&
                           (() => {
@@ -944,7 +971,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                   ? 'bg-emerald-600 hover:bg-emerald-700'
                   : 'bg-sky-700 hover:bg-sky-800'
               }`}
-              aria-label={searchButtonLabel}
+              aria-label={effectiveSearchButtonLabel}
               title={searchButtonTitle}
               disabled={isLoading}
             >
