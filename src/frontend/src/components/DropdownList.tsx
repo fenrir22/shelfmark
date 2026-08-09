@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { t } from '../i18n';
 import { Dropdown } from './Dropdown';
 
 export interface DropdownListOption {
@@ -33,7 +34,7 @@ interface DropdownListProps {
 
 export const DropdownList = ({
   label,
-  placeholder = 'Select an option',
+  placeholder = t('select_an_option'),
   options,
   multiple = false,
   showCheckboxes,

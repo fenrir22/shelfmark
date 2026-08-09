@@ -165,6 +165,29 @@ try:
 except ImportError as e:
     logger.warning("Failed to import plugin modules: %s", e)
 
+# Auto-connect Telegram client if configured
+try:
+    from shelfmark.release_sources.telegram.client import client_manager
+    from shelfmark.core.config import config
+    
+    if config.get("TELEGRAM_ENABLED", False):
+        api_id = config.get("TELEGRAM_API_ID")
+        api_hash = config.get("TELEGRAM_API_HASH")
+        
+        if api_id and api_hash:
+            from shelfmark.config import env
+            session_path = str(env.CONFIG_DIR / "telegram_session")
+            
+            logger.info("Auto-connecting Telegram client...")
+            connected = client_manager.connect(int(api_id), api_hash, session_path)
+            
+            if connected:
+                logger.info("Telegram client connected as @%s", client_manager.username)
+            else:
+                logger.warning("Telegram client auto-connection failed (status: %s)", client_manager.status)
+except Exception as e:
+    logger.debug("Telegram auto-connection skipped: %s", e)
+
 # Migrate legacy security settings if needed
 _migrate_security_settings()
 

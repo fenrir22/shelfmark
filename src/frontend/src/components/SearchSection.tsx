@@ -7,6 +7,7 @@ import type {
   SearchMode,
   MetadataProviderSummary,
 } from '../types';
+import { t } from '../i18n';
 import { AdvancedFilters } from './AdvancedFilters';
 import { SearchBar } from './SearchBar';
 
@@ -87,7 +88,7 @@ export const SearchSection = ({
           isInitialState ? 'mb-6 opacity-100 sm:mb-8' : 'mb-0 h-0 overflow-hidden opacity-0'
         }`}
       >
-        <img src={logoUrl} alt="Logo" className="h-8 w-8" />
+        <img src={logoUrl} alt={t('logo')} className="h-8 w-8" />
         <h1 className="text-2xl font-semibold">{searchPageTitle}</h1>
       </div>
       <div
@@ -116,8 +117,7 @@ export const SearchSection = ({
         />
         {activeQueryTarget === 'manual' && (
           <p className="px-2 text-xs opacity-50">
-            Manual search queries release sources directly. Some sources may return limited
-            metadata, which can affect file naming templates.
+            {t('manual_search_queries_release_sources')}
           </p>
         )}
         <AdvancedFilters

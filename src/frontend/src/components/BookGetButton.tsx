@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 
+import { t } from '../i18n';
 import type { Book, ButtonStateInfo } from '../types';
 import { CircularProgress } from './shared';
 
@@ -101,16 +102,16 @@ export const BookGetButton = ({
 
   // Determine display text
   const getDisplayText = () => {
-    if (isBlocked) return buttonState?.text || 'Unavailable';
-    if (isCompleted) return 'Downloaded';
-    if (hasError) return 'Failed';
-    if (isLoading) return 'Loading';
-    if (buttonState?.state === 'downloading') return 'Downloading';
-    if (buttonState?.state === 'locating') return 'Locating files';
-    if (buttonState?.state === 'resolving') return 'Resolving';
-    if (buttonState?.state === 'queued') return 'Queued';
+    if (isBlocked) return buttonState?.text || t('unavailable');
+    if (isCompleted) return t('downloaded');
+    if (hasError) return t('failed');
+    if (isLoading) return t('loading');
+    if (buttonState?.state === 'downloading') return t('downloading');
+    if (buttonState?.state === 'locating') return t('locating_files');
+    if (buttonState?.state === 'resolving') return t('resolving');
+    if (buttonState?.state === 'queued') return t('queued');
     if (buttonState?.state === 'download' && buttonState.text) return buttonState.text;
-    return 'Get';
+    return t('get');
   };
 
   // Render appropriate icon based on state

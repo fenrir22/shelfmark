@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { t } from '../../../i18n';
 import type { RequestPolicyMode } from '../../../types';
 import { DropdownList } from '../../DropdownList';
 import type {
@@ -153,7 +154,7 @@ export const RequestPolicyGrid = ({
             disabled={clearOverridesDisabled}
             className="rounded-lg border border-(--border-muted) bg-(--bg) px-3 py-1.5 text-xs font-medium transition-colors hover:bg-(--hover-surface) disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Clear all overrides
+            {t('clear_all_overrides')}
           </button>
         </div>
       )}
@@ -161,15 +162,15 @@ export const RequestPolicyGrid = ({
       <div className="rounded-lg border border-(--border-muted)">
         {/* Header */}
         <div className="hidden gap-3 rounded-t-lg border-b border-(--border-muted) bg-(--bg-soft) px-3 py-2 text-xs font-medium opacity-60 sm:grid sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <span>Source</span>
-          <span>Ebook</span>
-          <span>Audiobook</span>
+          <span>{t('source')}</span>
+          <span>{t('ebook')}</span>
+          <span>{t('audiobook')}</span>
         </div>
 
         {/* Default row */}
         <div className="grid grid-cols-1 items-center gap-3 border-b-2 border-(--border-muted) bg-(--bg-soft) px-3 py-2.5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">Default</p>
+            <p className="truncate text-sm font-semibold">{t('default')}</p>
           </div>
 
           {CONTENT_TYPES.map((contentType) => {
@@ -217,7 +218,7 @@ export const RequestPolicyGrid = ({
                     disabled={isDisabled}
                     className="shrink-0 text-xs text-sky-500 transition-colors hover:text-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Reset
+                    {t('reset')}
                   </button>
                 )}
               </div>
@@ -263,7 +264,7 @@ export const RequestPolicyGrid = ({
                   return (
                     <div key={key} className="flex min-h-[36px] items-center justify-center">
                       {mobileLabel}
-                      <span className="text-xs opacity-40">Not supported</span>
+                      <span className="text-xs opacity-40">{t('not_supported')}</span>
                     </div>
                   );
                 }
@@ -337,7 +338,7 @@ export const RequestPolicyGrid = ({
                         className="shrink-0 text-xs text-sky-500 transition-colors hover:text-sky-400"
                         aria-label={`Reset ${sourceRow.displayName} ${contentType} override`}
                       >
-                        Reset
+                        {t('reset')}
                       </button>
                     )}
                   </div>

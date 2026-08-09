@@ -2,6 +2,7 @@ import type { FormEvent, KeyboardEvent } from 'react';
 import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { t } from '../i18n';
 import { useMountEffect } from '../hooks/useMountEffect';
 import type { LoginCredentials } from '../types';
 import { buildOidcLoginUrl } from '../utils/authRedirect';
@@ -94,14 +95,14 @@ const PasswordLoginForm = ({
     >
       <div className="mb-4">
         <label htmlFor="username" className="mb-2 block text-sm font-medium">
-          Username
+          {t('username')}
         </label>
         <input
           ref={usernameRef}
           type="text"
           id="username"
           name="username"
-          aria-label="Username"
+          aria-label={t('username')}
           autoComplete="username"
           autoCapitalize="none"
           autoCorrect="off"
@@ -124,7 +125,7 @@ const PasswordLoginForm = ({
 
       <div className="mb-4">
         <label htmlFor="password" className="mb-2 block text-sm font-medium">
-          Password
+          {t('password')}
         </label>
         <div className="relative">
           <input
@@ -132,7 +133,7 @@ const PasswordLoginForm = ({
             type={showPassword ? 'text' : 'password'}
             id="password"
             name="password"
-            aria-label="Password"
+            aria-label={t('password')}
             autoComplete="current-password"
             autoCapitalize="none"
             autoCorrect="off"
@@ -155,7 +156,7 @@ const PasswordLoginForm = ({
             onClick={() => setShowPassword((current) => !current)}
             disabled={isLoading}
             className="hover-action absolute top-1/2 right-2 -translate-y-1/2 transform rounded-full p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-label={showPassword ? t('hide_password') : t('show_password')}
           >
             {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
           </button>
@@ -170,12 +171,12 @@ const PasswordLoginForm = ({
           checked={rememberMe}
           onChange={(event) => setRememberMe(event.target.checked)}
           disabled={isLoading}
-          aria-label="Remember me for 7 days"
+          aria-label={t('remember_me_7_days')}
           className="h-4 w-4 rounded-sm accent-sky-900 focus:ring-2 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
           style={{ borderColor: 'var(--border-color)' }}
         />
         <label htmlFor="remember-me" className="ml-2 text-sm">
-          Remember me for 7 days
+          {t('remember_me_7_days')}
         </label>
       </div>
 
@@ -184,7 +185,7 @@ const PasswordLoginForm = ({
         name="submit"
         disabled={isLoading}
         className="w-full rounded-lg bg-sky-700 px-4 py-2.5 font-medium text-white transition-colors hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-sky-700"
-        aria-label="Sign in"
+        aria-label={t('sign_in')}
       >
         {isLoading ? (
           <span className="flex items-center justify-center">
@@ -208,10 +209,10 @@ const PasswordLoginForm = ({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            Signing in...
+            {t('signing_in')}
           </span>
         ) : (
-          'Sign In'
+          t('sign_in')
         )}
       </button>
     </form>
@@ -283,7 +284,7 @@ export const LoginForm = ({
             href={oidcLoginUrl}
             className="block w-full rounded-lg bg-sky-700 px-4 py-2.5 text-center font-medium text-white transition-colors hover:bg-sky-800"
           >
-            {oidcButtonLabel || 'Sign in with OIDC'}
+            {oidcButtonLabel || t('sign_in_with_oidc')}
           </a>
 
           {!hideLocalAuth && (
@@ -295,7 +296,7 @@ export const LoginForm = ({
                   onClick={() => setShowPasswordLogin((prev) => !prev)}
                   className="px-3 text-sm opacity-60 transition-opacity hover:opacity-100"
                 >
-                  {showPasswordLogin ? 'Hide' : 'Use password'}
+                  {showPasswordLogin ? t('hide') : t('use_password')}
                 </button>
                 <div className="flex-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
               </div>

@@ -108,6 +108,8 @@ import {
   applyUniversalPolicyModeToButtonState,
 } from './utils/requestPolicyUi';
 
+import { t } from './i18n';
+
 // eslint-disable-next-line import/no-unassigned-import -- global app stylesheet is loaded for side effects
 import './styles.css';
 
@@ -186,17 +188,17 @@ const getSubmissionSuccessMessage = (
       const title =
         typeof queuedDownloads[0].title === 'string' && queuedDownloads[0].title.trim()
           ? queuedDownloads[0].title.trim()
-          : 'Untitled';
-      return `Download queued: ${title}`;
+          : t('untitled');
+      return t('download_queued', { title });
     }
-    return 'Downloads queued';
+    return t('downloads_queued');
   }
 
-  return 'Download queued and request submitted';
+  return t('download_queued_and_request_submitted');
 };
 
 const CONFIRMED_DOWNLOAD_INTERRUPTED_MESSAGE =
-  'Download queued, but the proxy interrupted the response. Status will refresh shortly.';
+  t('download_queued_proxy_interrupted');
 
 type CombinedSelectionState = {
   phase: 'ebook' | 'audiobook';
@@ -554,7 +556,7 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to load admin users:', error);
-      setAdminUsersError('Failed to load users');
+      setAdminUsersError(t('failed_to_load_users'));
     } finally {
       setIsAdminUsersLoading(false);
     }
@@ -971,7 +973,7 @@ function App() {
         if (book) {
           setSelectedBook(book);
         } else {
-          showToast('Failed to load book details', 'error');
+          showToast(t('Failed to load book details'), 'error');
         }
       }
     }
@@ -990,7 +992,7 @@ function App() {
         return true;
       } catch (error) {
         console.error('Request creation failed:', error);
-        showToast(getErrorMessage(error, 'Failed to create request'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_create_request')), 'error');
         if (isPolicyGuardError(error)) {
           await refreshRequestPolicy({ force: true });
         }
@@ -1035,7 +1037,7 @@ function App() {
         requestPayloads,
         requestPayloads.length === 1
           ? getRequestSuccessMessage(requestPayloads[0])
-          : 'Requests submitted',
+          : t('requests_submitted'),
       );
       if (!success) return false;
 
@@ -1143,7 +1145,7 @@ function App() {
               selected: false,
             });
             const listName = searchFieldLabelsRef.current['hardcover_list'];
-            showToast(`Removed from ${listName || 'list'}`, 'info');
+            showToast(t('removed_from_list', { list: listName || t('list') }), 'info');
           }
         })
         .catch(() => undefined);
@@ -1177,7 +1179,7 @@ function App() {
             await refreshRequestPolicy({ force: true });
             return;
           }
-          showToast('Download blocked by policy', 'error');
+          showToast(t('download_blocked_by_policy'), 'error');
           await refreshRequestPolicy({ force: true });
           return;
         }
@@ -1194,7 +1196,7 @@ function App() {
         } catch (verificationError) {
           console.warn('Failed to verify download after response error:', verificationError);
         }
-        showToast(getErrorMessage(error, 'Failed to queue download'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_queue_download')), 'error');
         throw error;
       }
     },
@@ -1275,7 +1277,7 @@ function App() {
             await refreshRequestPolicy({ force: true });
             return;
           }
-          showToast('Download blocked by policy', 'error');
+          showToast(t('download_blocked_by_policy'), 'error');
           await refreshRequestPolicy({ force: true });
           return;
         }
@@ -1295,7 +1297,7 @@ function App() {
             verificationError,
           );
         }
-        showToast(getErrorMessage(error, 'Failed to queue download'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_queue_download')), 'error');
         throw error;
       }
     },
@@ -1467,7 +1469,7 @@ function App() {
 
     if (mode === 'blocked') {
       policyTrace('direct.action:block', { bookId: book.id, mode });
-      showToast('Download blocked by policy', 'error');
+      showToast(t('download_blocked_by_policy'), 'error');
       await refreshRequestPolicy({ force: true });
       return;
     }

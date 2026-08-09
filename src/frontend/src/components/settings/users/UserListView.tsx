@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { t } from '../../../i18n';
 import type { AdminUser, DownloadDefaults } from '../../../services/api';
 import type { CreateUserFormState } from './types';
 import { canCreateLocalUsersForAuthMode } from './types';
@@ -96,7 +97,7 @@ export const UserListView = ({
         if (loadingUsers && users.length === 0) {
           return (
             <div className="space-y-2 py-8 text-center">
-              <p className="text-sm opacity-50">Loading users...</p>
+              <p className="text-sm opacity-50">{t('loading_users')}</p>
             </div>
           );
         }
@@ -110,7 +111,7 @@ export const UserListView = ({
                 onClick={onRetryLoadUsers}
                 className="rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface)"
               >
-                Retry
+                {t('retry')}
               </button>
             </div>
           );
@@ -119,7 +120,7 @@ export const UserListView = ({
         if (users.length === 0) {
           return (
             <div className="space-y-2 py-8 text-center">
-              <p className="text-sm opacity-50">No users yet.</p>
+              <p className="text-sm opacity-50">{t('no_users_yet')}</p>
               <p className="text-xs opacity-40">
                 Create a local admin account before enabling OIDC to avoid getting locked out.
               </p>
@@ -224,12 +225,12 @@ export const UserListView = ({
                           deleting={deletingUserId === user.id}
                           preferencesPanel={{
                             description: 'Customise delivery and request settings for this user.',
-                            actionLabel: 'Open User Preferences',
+                            actionLabel: t('open_user_preferences'),
                             onAction: onOpenOverrides,
                           }}
                         />
                       ) : (
-                        <div className="text-sm opacity-60">Loading user details...</div>
+                        <div className="text-sm opacity-60">{t('loading_user_details')}</div>
                       )}
                     </div>
                   )}
@@ -258,7 +259,7 @@ export const UserListView = ({
               onClick={onCreate}
               className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700"
             >
-              Create Local User
+              {t('create_local_user')}
             </button>
           )}
         </div>
@@ -274,7 +275,7 @@ export const UserListView = ({
             disabled={syncingCwa}
             className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {syncingCwa ? 'Syncing with CWA...' : 'Sync with CWA'}
+            {syncingCwa ? t('syncing_with_cwa') : t('sync_with_cwa')}
           </button>
         </div>
       )}

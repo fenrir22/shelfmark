@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { t } from '../../i18n';
 import { useSearchMode } from '../../contexts/SearchModeContext';
 import type { Book, ButtonStateInfo } from '../../types';
 import { bookSupportsTargets } from '../../utils/bookTargetLoader';
@@ -107,7 +108,7 @@ export const CardView = ({
               )}
               <img
                 src={book.preview}
-                alt={book.title || 'Book cover'}
+                alt={book.title || t('book_cover')}
                 className="h-full w-full"
                 loading="lazy"
                 style={{
@@ -125,7 +126,7 @@ export const CardView = ({
               className="flex h-full w-full items-center justify-center text-sm opacity-50"
               style={{ background: 'var(--border-muted)' }}
             >
-              No Cover
+              {t('no_cover')}
             </div>
           )}
 
@@ -160,7 +161,7 @@ export const CardView = ({
               void handleDetails(book.id);
             }}
             disabled={isLoadingDetails}
-            aria-label="Book details"
+            aria-label={t('book_details')}
           >
             {isLoadingDetails ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -182,12 +183,12 @@ export const CardView = ({
         <div className="space-y-1 max-sm:min-w-0 max-sm:space-y-0.5">
           <h3
             className="line-clamp-2 text-base leading-tight font-semibold max-sm:line-clamp-3 max-sm:min-w-0"
-            title={book.title || 'Untitled'}
+            title={book.title || t('untitled')}
           >
-            {book.title || 'Untitled'}
+            {book.title || t('untitled')}
           </h3>
           <p className="truncate text-sm opacity-80 max-sm:min-w-0 max-sm:text-xs">
-            {book.author || 'Unknown author'}
+            {book.author || t('unknown_author')}
           </p>
           {searchMode === 'universal' && book.display_fields && book.display_fields.length > 0 ? (
             <div className="flex flex-wrap gap-2 text-xs opacity-70 max-sm:gap-1 max-sm:text-[10px]">
@@ -224,7 +225,7 @@ export const CardView = ({
             style={{ borderColor: 'var(--border-muted)' }}
             disabled={isLoadingDetails}
           >
-            <span className="details-button-text">{isLoadingDetails ? 'Loading' : 'Details'}</span>
+            <span className="details-button-text">{isLoadingDetails ? t('loading') : t('details')}</span>
             <div
               className={`details-spinner h-3 w-3 rounded-full border-2 border-current border-t-transparent ${isLoadingDetails ? '' : 'hidden'}`}
             />

@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useState } from 'react';
 
 import type { ButtonStateInfo } from '../types';
+import { t } from '../i18n';
 import { CircularProgress } from './shared';
 
 type ButtonSize = 'sm' | 'md';
@@ -66,7 +67,7 @@ export const BookDownloadButton = ({
   );
   const isDisabled =
     buttonState.state !== 'download' || isQueuingVisible || isCompleted || isBlocked;
-  const displayText = isQueuingVisible ? 'Queuing...' : buttonState.text;
+  const displayText = isQueuingVisible ? t('queuing') : buttonState.text;
   const showCircularProgress =
     buttonState.state === 'downloading' && buttonState.progress !== undefined;
   const showSpinner = (isInProgress && !showCircularProgress) || isQueuingVisible;

@@ -23,6 +23,8 @@ dependencies = [
     "transmission-rpc",
     "authlib>=1.7.2,<1.8",
     "apprise>=1.12.0",
+    "telethon>=1.36.0",
+    "cryptg",
 ]
 
 [project.optional-dependencies]

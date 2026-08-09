@@ -1,3 +1,4 @@
+import { t } from '../../../i18n';
 import type { DeliveryPreferencesResponse } from '../../../services/api';
 import type {
   ActionButtonConfig,
@@ -27,12 +28,12 @@ type NotificationSettingKey = 'USER_NOTIFICATION_ROUTES';
 
 const ROUTE_EVENT_ALL = 'all';
 const USER_ROUTE_EVENT_OPTIONS = [
-  { value: ROUTE_EVENT_ALL, label: 'All' },
-  { value: 'request_created', label: 'New request submitted' },
-  { value: 'request_fulfilled', label: 'Request approved' },
-  { value: 'request_rejected', label: 'Request rejected' },
-  { value: 'download_complete', label: 'Download complete' },
-  { value: 'download_failed', label: 'Download failed' },
+  { value: ROUTE_EVENT_ALL, label: t('all') },
+  { value: 'request_created', label: t('new_request_submitted') },
+  { value: 'request_fulfilled', label: t('request_approved') },
+  { value: 'request_rejected', label: t('request_rejected') },
+  { value: 'download_complete', label: t('download_complete') },
+  { value: 'download_failed', label: t('download_failed') },
 ];
 const ALLOWED_ROUTE_EVENTS = new Set(USER_ROUTE_EVENT_OPTIONS.map((option) => option.value));
 const ROUTE_EVENT_ORDER = new Map(
@@ -51,27 +52,27 @@ const fallbackRoutesField: TableFieldConfig = {
   columns: [
     {
       key: 'event',
-      label: 'Event',
+      label: t('event'),
       type: 'multiselect',
       options: USER_ROUTE_EVENT_OPTIONS,
       defaultValue: [ROUTE_EVENT_ALL],
-      placeholder: 'Select events...',
+      placeholder: t('select_events'),
     },
     {
       key: 'url',
-      label: 'Notification URL',
+      label: t('notification_url'),
       type: 'text',
       placeholder: 'e.g. ntfys://ntfy.sh/username-topic',
     },
   ],
-  addLabel: 'Add Route',
-  emptyMessage: 'No routes configured.',
+  addLabel: t('add_route'),
+  emptyMessage: t('no_routes_configured'),
 };
 
 const notificationHeading: HeadingFieldConfig = {
   type: 'HeadingField',
   key: 'notification_preferences_heading',
-  title: 'Notifications',
+  title: t('notifications'),
   description:
     'Personal notification preferences for this user. Reset to inherit global defaults from the Notifications tab.',
 };
@@ -79,7 +80,7 @@ const notificationHeading: HeadingFieldConfig = {
 const testNotificationActionField: ActionButtonConfig = {
   type: 'ActionButton',
   key: 'test_user_notification',
-  label: 'Test Notification',
+  label: t('test_notification'),
   description: 'Send a test notification to the configured personal route URLs.',
   style: 'primary',
 };

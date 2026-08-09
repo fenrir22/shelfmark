@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useMemo } from 'react';
 
+import { t } from '../../../i18n';
 import type {
   MultiSelectFieldConfig,
   TableFieldConfig,
@@ -234,7 +235,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
           disabled={isDisabled}
           className="hover-action rounded-lg border border-(--border-muted) bg-(--bg-soft) px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {field.addLabel || 'Add'}
+          {field.addLabel || t('add')}
         </button>
       </div>
     );
@@ -298,7 +299,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
                     {isDisabled ? (
                       <div className="w-full cursor-not-allowed rounded-lg border border-(--border-muted) bg-(--bg-soft) px-3 py-2 text-sm opacity-60 shadow-sm">
                         {options.find((o) => o.value === toPrimitiveString(cellValue))?.label ||
-                          'Select...'}
+                          t('select')}
                       </div>
                     ) : (
                       <DropdownList
@@ -307,7 +308,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
                         onChange={(val) =>
                           updateCell(rowIndex, col.key, Array.isArray(val) ? val[0] : val)
                         }
-                        placeholder={col.placeholder || 'Select...'}
+                        placeholder={col.placeholder || t('select')}
                         widthClassName="w-full"
                       />
                     )}
@@ -332,7 +333,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
                   value: selectedValues,
                   options,
                   variant: 'dropdown',
-                  placeholder: col.placeholder || 'Select...',
+                  placeholder: col.placeholder || t('select'),
                 };
 
                 return (
@@ -376,7 +377,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
                 onClick={() => removeRow(rowIndex)}
                 disabled={isDisabled}
                 className="hover-action rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="Remove row"
+                aria-label={t('remove_row')}
               >
                 <svg
                   className="h-4 w-4"
@@ -402,7 +403,7 @@ export const TableField = ({ field, value, onChange, disabled }: TableFieldProps
         disabled={isDisabled}
         className="hover-action rounded-lg border border-(--border-muted) bg-(--bg-soft) px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {field.addLabel || 'Add'}
+        {field.addLabel || t('add')}
       </button>
     </div>
   );

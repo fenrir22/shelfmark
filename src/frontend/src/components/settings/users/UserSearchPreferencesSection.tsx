@@ -1,3 +1,4 @@
+import { t } from '../../../i18n';
 import type { DeliveryPreferencesResponse } from '../../../services/api';
 import type { HeadingFieldConfig, SelectFieldConfig } from '../../../types/settings';
 import { HeadingField, SelectField } from '../fields';
@@ -22,19 +23,19 @@ type SearchSettingKey =
 const fallbackSearchModeField: SelectFieldConfig = {
   type: 'SelectField',
   key: 'SEARCH_MODE',
-  label: 'Search Mode',
+  label: t('search_mode'),
   description: 'How you want to search for and download books.',
   value: 'direct',
   options: [
-    { value: 'direct', label: 'Direct' },
-    { value: 'universal', label: 'Universal' },
+    { value: 'direct', label: t('direct') },
+    { value: 'universal', label: t('universal') },
   ],
 };
 
 const fallbackMetadataProviderField: SelectFieldConfig = {
   type: 'SelectField',
   key: 'METADATA_PROVIDER',
-  label: 'Book Metadata Provider',
+  label: t('book_metadata_provider'),
   description: 'Choose which metadata provider to use for book searches.',
   value: '',
   options: [],
@@ -43,16 +44,16 @@ const fallbackMetadataProviderField: SelectFieldConfig = {
 const fallbackAudiobookMetadataProviderField: SelectFieldConfig = {
   type: 'SelectField',
   key: 'METADATA_PROVIDER_AUDIOBOOK',
-  label: 'Audiobook Metadata Provider',
+  label: t('audiobook_metadata_provider'),
   description: 'Metadata provider for audiobook searches. Uses the book provider if not set.',
   value: '',
-  options: [{ value: '', label: 'Use main provider' }],
+  options: [{ value: '', label: t('use_main_provider') }],
 };
 
 const fallbackDefaultReleaseSourceField: SelectFieldConfig = {
   type: 'SelectField',
   key: 'DEFAULT_RELEASE_SOURCE',
-  label: 'Default Book Release Source',
+  label: t('default_book_release_source'),
   description: 'The release source tab to open by default in the release modal for books.',
   value: 'direct_download',
   options: [],
@@ -61,17 +62,17 @@ const fallbackDefaultReleaseSourceField: SelectFieldConfig = {
 const fallbackDefaultAudiobookReleaseSourceField: SelectFieldConfig = {
   type: 'SelectField',
   key: 'DEFAULT_RELEASE_SOURCE_AUDIOBOOK',
-  label: 'Default Audiobook Release Source',
+  label: t('default_audiobook_release_source'),
   description:
     'The release source tab to open by default in the release modal for audiobooks. Uses the book release source if not set.',
   value: '',
-  options: [{ value: '', label: 'Use book release source' }],
+  options: [{ value: '', label: t('use_book_release_source') }],
 };
 
 const searchHeading: HeadingFieldConfig = {
   type: 'HeadingField',
   key: 'search_preferences_heading',
-  title: 'Search Preferences',
+  title: t('search_preferences'),
   description:
     'Personal search settings for this user. Reset to inherit global defaults from Search Mode.',
 };

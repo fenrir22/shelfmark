@@ -24,6 +24,7 @@ import {
   ActionButton,
 } from './settings/fields';
 import { FieldWrapper } from './settings/shared';
+import { t } from '../i18n';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -164,9 +165,9 @@ const renderField = (
     case 'OrderableListField':
     case 'TableField':
     case 'CustomComponentField':
-      return <div>Unsupported onboarding field type: {field.type}</div>;
+      return <div>{t('unsupported_field_type')}{field.type}</div>;
     default:
-      return <div>Unknown field type</div>;
+      return <div>{t('unknown_field_type')}</div>;
   }
 };
 
@@ -234,7 +235,7 @@ const OnboardingModalSession = ({
         setValues(config.values);
       } catch (err) {
         console.error('Failed to fetch onboarding config:', err);
-        setError('Failed to load setup wizard');
+        setError(t('failed_to_load_setup_wizard'));
       } finally {
         setIsLoading(false);
       }
@@ -285,12 +286,12 @@ const OnboardingModalSession = ({
     try {
       setIsSaving(true);
       await skipOnboarding();
-      onShowToast?.('Setup skipped - using defaults', 'info');
+      onShowToast?.(t('setup_skipped_using_defaults'), 'info');
       handleClose();
       onComplete();
     } catch (err) {
       console.error('Failed to skip onboarding:', err);
-      onShowToast?.('Failed to skip setup', 'error');
+      onShowToast?.(t('failed_to_skip_setup'), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -302,15 +303,15 @@ const OnboardingModalSession = ({
       setIsSaving(true);
       const result = await saveOnboarding(values);
       if (result.success) {
-        onShowToast?.('Setup complete!', 'success');
+        onShowToast?.(t('setup_complete'), 'success');
         handleClose();
         onComplete();
       } else {
-        onShowToast?.(result.message || 'Failed to save settings', 'error');
+        onShowToast?.(result.message || t('failed_to_save_settings'), 'error');
       }
     } catch (err) {
       console.error('Failed to save onboarding:', err);
-      onShowToast?.('Failed to save settings', 'error');
+      onShowToast?.(t('failed_to_save_settings'), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -358,7 +359,7 @@ const OnboardingModalSession = ({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            <span>Loading setup wizard...</span>
+            <span>{t('loading_setup_wizard')}</span>
           </div>
         </div>
       </div>
@@ -374,7 +375,7 @@ const OnboardingModalSession = ({
           className="absolute inset-0 bg-black/60"
           onClick={handleClose}
           tabIndex={-1}
-          aria-label="Close setup wizard"
+          aria-label={t('close_setup_wizard')}
         />
         <div
           className="relative max-w-md rounded-xl p-8 shadow-2xl"
@@ -403,7 +404,7 @@ const OnboardingModalSession = ({
               onClick={handleClose}
               className="rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface)"
             >
-              Close
+              {t('close')}
             </button>
           </div>
         </div>
@@ -428,7 +429,7 @@ const OnboardingModalSession = ({
         style={{ background: 'var(--bg)' }}
         role="dialog"
         aria-modal="true"
-        aria-label="Setup Wizard"
+        aria-label={t('setup_wizard')}
       >
         <div className="flex-shrink-0">
           {/* Header */}
@@ -438,7 +439,7 @@ const OnboardingModalSession = ({
                 {clampedStepIndex + 1}
               </div>
               <div>
-                <h2 className="text-lg font-semibold">{currentStep?.title || 'Setup'}</h2>
+                <h2 className="text-lg font-semibold">{currentStep?.title || t('setup')}</h2>
                 <p className="text-xs opacity-60">
                   Step {clampedStepIndex + 1} of {visibleSteps.length}
                 </p>
@@ -448,7 +449,7 @@ const OnboardingModalSession = ({
               type="button"
               onClick={handleClose}
               className="rounded-lg p-1.5 transition-colors hover:bg-(--hover-surface)"
-              aria-label="Close"
+              aria-label={t('close')}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -503,7 +504,7 @@ const OnboardingModalSession = ({
               disabled={isSaving || !isFirstStep}
               className={`rounded-lg px-4 py-2 text-sm font-medium ${isFirstStep ? 'opacity-60 transition-opacity hover:opacity-100' : 'invisible'}`}
             >
-              Skip setup
+              {t('skip_setup')}
             </button>
           </div>
 
@@ -515,7 +516,7 @@ const OnboardingModalSession = ({
                 disabled={isSaving}
                 className="rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface) disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Back
+                {t('back')}
               </button>
             )}
 
@@ -546,10 +547,10 @@ const OnboardingModalSession = ({
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                       />
                     </svg>
-                    Saving...
+                    {t('saving')}
                   </>
                 ) : (
-                  'Finish Setup'
+                  t('finish_setup')
                 )}
               </button>
             ) : (
@@ -559,7 +560,7 @@ const OnboardingModalSession = ({
                 disabled={isSaving}
                 className="flex items-center gap-1 rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Next
+                {t('next')}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"

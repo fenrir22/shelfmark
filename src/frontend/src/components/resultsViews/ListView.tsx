@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { t } from '../../i18n';
 import { useSearchMode } from '../../contexts/SearchModeContext';
 import type { Book, ButtonStateInfo, DisplayField } from '../../types';
 import { bookSupportsTargets } from '../../utils/bookTargetLoader';
@@ -52,9 +53,9 @@ const ListViewThumbnail = ({
     return (
       <div
         className={`${sizeClass} flex items-center justify-center rounded-sm bg-gray-200 text-[8px] font-medium text-gray-500 sm:text-[9px] dark:bg-gray-700 dark:text-gray-300`}
-        aria-label="No cover available"
+        aria-label={t('no_cover_available')}
       >
-        No Cover
+        {t('no_cover')}
       </div>
     );
   }
@@ -68,7 +69,7 @@ const ListViewThumbnail = ({
       )}
       <img
         src={preview}
-        alt={title || 'Book cover'}
+        alt={title || t('book_cover')}
         className={`h-full w-full object-cover ${isSquare ? 'object-center' : 'object-top'}`}
         loading="lazy"
         onLoad={() => setImageLoaded(true)}
@@ -124,7 +125,7 @@ export const ListView = ({
         boxShadow: '0 10px 30px rgba(15, 23, 42, 0.08)',
       }}
       role="region"
-      aria-label="List view of books"
+      aria-label={t('list_view_of_books')}
     >
       <div className="w-full divide-y divide-gray-200/60 dark:divide-gray-800/60">
         {books.map((book, index) => {
@@ -183,7 +184,7 @@ export const ListView = ({
                 <div className="flex min-w-0 flex-col justify-center sm:pl-3">
                   <h3
                     className="line-clamp-1 flex items-center gap-2 text-xs leading-tight font-semibold min-[400px]:text-sm sm:line-clamp-2 sm:text-base"
-                    title={book.title || 'Untitled'}
+                    title={book.title || t('untitled')}
                   >
                     {showSeriesPosition && book.series_position != null && (
                       <span
@@ -196,10 +197,10 @@ export const ListView = ({
                         #{book.series_position}
                       </span>
                     )}
-                    <span className="truncate">{book.title || 'Untitled'}</span>
+                    <span className="truncate">{book.title || t('untitled')}</span>
                   </h3>
                   <p className="truncate text-[10px] text-gray-600 min-[400px]:text-xs sm:text-sm dark:text-gray-300">
-                    {book.author || 'Unknown author'}
+                    {book.author || t('unknown_author')}
                     {book.year && <span className="sm:hidden"> • {book.year}</span>}
                   </p>
                 </div>

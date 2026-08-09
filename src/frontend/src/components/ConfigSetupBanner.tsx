@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
 
+import { t } from '../i18n';
+
 const STORAGE_KEY = 'cwa-config-banner-dismissed';
 
 interface ConfigSetupBannerProps {
@@ -74,7 +76,7 @@ export const ConfigSetupBanner = ({
         type="button"
         className={`absolute inset-0 bg-black/60 transition-opacity duration-150 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
         onClick={handleClose}
-        aria-label="Close settings setup dialog"
+        aria-label={t('close_settings_setup')}
       />
 
       {/* Modal */}
@@ -88,13 +90,13 @@ export const ConfigSetupBanner = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-(--border-muted) px-5 py-4">
           <h2 className="text-lg font-semibold">
-            {showContinueButton ? 'Config Volume Required' : 'New Feature: Settings Page'}
+            {showContinueButton ? t('config_volume_required') : t('new_feature_settings_page')}
           </h2>
           <button
             type="button"
             onClick={handleClose}
             className="rounded-lg p-1.5 transition-colors hover:bg-(--hover-surface)"
-            aria-label="Close"
+            aria-label={t('close')}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -157,14 +159,14 @@ export const ConfigSetupBanner = ({
                 onClick={handleClose}
                 className="rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface)"
               >
-                Close
+                {t('close')}
               </button>
               <button
                 type="button"
                 onClick={handleContinue}
                 className="rounded-lg bg-(--primary-color) px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-(--primary-dark)"
               >
-                Continue to Settings
+                {t('continue_to_settings')}
               </button>
             </>
           ) : (
@@ -173,7 +175,7 @@ export const ConfigSetupBanner = ({
               onClick={handleClose}
               className="rounded-lg bg-(--primary-color) px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-(--primary-dark)"
             >
-              Got it
+              {t('got_it')}
             </button>
           )}
         </div>

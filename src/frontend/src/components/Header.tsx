@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 
+import { t } from '../i18n';
 import { useDismiss } from '../hooks/useDismiss';
 import { useMountEffect } from '../hooks/useMountEffect';
 import type {
@@ -159,7 +160,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
 
     const actingAsOptions = useMemo(
       () => [
-        { value: '', label: 'Myself' },
+        { value: '', label: t('myself') },
         ...adminUsers.map((user) => {
           const displayLabel = formatActingAsUserName(user);
           return {
@@ -260,7 +261,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
       closeDropdown();
       // Show persistent toast while gathering logs
       const loadingToastId = onShowToast?.(
-        'Gathering debug logs... This may take a minute.',
+        t('gathering_debug_logs'),
         'info',
         true,
       );
@@ -304,12 +305,12 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
         window.URL.revokeObjectURL(url);
         a.remove();
 
-        onShowToast?.('Debug logs downloaded successfully', 'success');
+        onShowToast?.(t('debug_logs_downloaded_successfully'), 'success');
       } catch (error) {
         // Remove the loading toast on error too
         if (loadingToastId) onRemoveToast?.(loadingToastId);
         console.error('Debug download error:', error);
-        onShowToast?.('Debug download failed. Check console for details.', 'error');
+        onShowToast?.(t('debug_download_failed_check_console'), 'error');
       }
     };
 
@@ -326,8 +327,8 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
             target="_blank"
             rel="noopener noreferrer"
             className="hover-action flex items-center gap-2 rounded-full px-3 py-2 text-gray-900 transition-all duration-200 dark:text-gray-100"
-            aria-label="Open book library"
-            title={showIconsOnly ? 'Book Library' : 'Go To Library'}
+            aria-label={t('open_book_library')}
+            title={showIconsOnly ? t('book_library') : t('go_to_library')}
           >
             <svg
               className="h-5 w-5"
@@ -343,7 +344,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                 d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
               />
             </svg>
-            {!showIconsOnly && <span className="text-sm font-medium">Go To Library</span>}
+            {!showIconsOnly && <span className="text-sm font-medium">{t('go_to_library')}</span>}
           </a>
         )}
 
@@ -354,8 +355,8 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
             target="_blank"
             rel="noopener noreferrer"
             className="hover-action flex items-center gap-2 rounded-full px-3 py-2 text-gray-900 transition-all duration-200 dark:text-gray-100"
-            aria-label="Open audiobook library"
-            title={showIconsOnly ? 'Audiobook Library' : 'Go To Library'}
+            aria-label={t('open_audiobook_library')}
+            title={showIconsOnly ? t('audiobook_library') : t('go_to_library')}
           >
             <svg
               className="h-5 w-5"
@@ -371,7 +372,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                 d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"
               />
             </svg>
-            {!showIconsOnly && <span className="text-sm font-medium">Go To Library</span>}
+            {!showIconsOnly && <span className="text-sm font-medium">{t('go_to_library')}</span>}
           </a>
         )}
 
@@ -381,8 +382,8 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
             type="button"
             onClick={onDownloadsClick}
             className="hover-action relative flex items-center gap-2 rounded-full px-3 py-2 text-gray-900 transition-all duration-200 dark:text-gray-100"
-            aria-label="View activity"
-            title="Activity"
+            aria-label={t('view_activity')}
+            title={t('activity')}
           >
             <div className="relative">
               <svg
@@ -408,7 +409,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                 </span>
               )}
             </div>
-            <span className="hidden text-sm font-medium sm:inline">Activity</span>
+            <span className="hidden text-sm font-medium sm:inline">{t('activity')}</span>
           </button>
         )}
 
@@ -420,7 +421,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
             className={`hover-action relative rounded-full p-2 transition-colors ${
               isDropdownOpen ? 'bg-(--hover-action)' : ''
             }`}
-            aria-label="User menu"
+            aria-label={t('user_menu')}
             aria-expanded={isDropdownOpen}
             aria-haspopup="true"
           >
@@ -463,7 +464,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover-surface flex w-full items-center gap-3 px-4 py-2 text-left text-slate-700 transition-colors dark:text-slate-200"
-                  title="Submit a bug report"
+                  title={t('submit_bug_report')}
                 >
                   <svg
                     className="h-5 w-5"
@@ -479,7 +480,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                       d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.732a48.524 48.524 0 0 1-.005-10.499l-3.11.732a9 9 0 0 1-6.085-.711l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5"
                     />
                   </svg>
-                  <span>Report a Bug</span>
+                  <span>{t('report_a_bug')}</span>
                 </a>
 
                 {/* Settings Button */}
@@ -518,7 +519,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                         d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                       />
                     </svg>
-                    <span>Settings</span>
+                    <span>{t('settings')}</span>
                   </button>
                 )}
 
@@ -544,7 +545,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                           d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75a2.25 2.25 0 002.248-2.354M12 12.75a2.25 2.25 0 01-2.248-2.354M12 8.25c.995 0 1.971-.08 2.922-.236.403-.066.74-.358.795-.762a3.778 3.778 0 00-.399-2.25M12 8.25c-.995 0-1.97-.08-2.922-.236-.402-.066-.74-.358-.795-.762a3.734 3.734 0 01.4-2.253M12 8.25a2.25 2.25 0 00-2.248 2.146M12 8.25a2.25 2.25 0 012.248 2.146M8.683 5a6.032 6.032 0 01-1.155-1.002c.07-.63.27-1.222.574-1.747m.581 2.749A3.75 3.75 0 0115.318 5m0 0c.427-.283.815-.62 1.155-.999a4.471 4.471 0 00-.575-1.752M4.921 6a24.048 24.048 0 00-.392 3.314c1.668.546 3.416.914 5.223 1.082M19.08 6c.205 1.08.337 2.187.392 3.314a23.882 23.882 0 01-5.223 1.082"
                         />
                       </svg>
-                      <span>Debug</span>
+                      <span>{t('debug')}</span>
                     </button>
                     <form action={withBasePath('/api/restart')} method="get" className="w-full">
                       <button
@@ -565,7 +566,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                             d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
                           />
                         </svg>
-                        <span>Restart</span>
+                        <span>{t('restart')}</span>
                       </button>
                     </form>
                   </>
@@ -589,8 +590,8 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                           type="button"
                           onClick={handleLogout}
                           className="hover-action shrink-0 rounded-full p-2 text-red-600 transition-colors dark:text-red-400"
-                          title="Sign Out"
-                          aria-label="Sign Out"
+                          title={t('sign_out')}
+                          aria-label={t('sign_out')}
                         >
                           <svg
                             className="h-5 w-5"
@@ -618,20 +619,20 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                     style={{ borderColor: 'var(--border-muted)' }}
                   >
                     <div className="text-xs font-medium tracking-wide uppercase opacity-70">
-                      Download as
+                      {t('download_as')}
                     </div>
                     <div className={isAdminUsersLoading ? 'pointer-events-none opacity-60' : ''}>
                       <DropdownList
                         options={actingAsOptions}
                         value={selectedActingAsValue}
                         onChange={handleActingAsChange}
-                        placeholder="Myself"
+                        placeholder={t('myself')}
                         widthClassName="w-full"
                         buttonClassName="rounded-lg text-sm"
                       />
                     </div>
                     {isAdminUsersLoading && (
-                      <div className="text-xs opacity-70">Loading users...</div>
+                      <div className="text-xs opacity-70">{t('loading_users')}</div>
                     )}
                     {adminUsersError && (
                       <div className="flex items-center justify-between gap-3">
@@ -643,7 +644,7 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                           onClick={() => void onLoadAdminUsers?.()}
                           className="text-xs font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
                         >
-                          Retry
+                          {t('retry')}
                         </button>
                       </div>
                     )}
@@ -674,14 +675,14 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                       type="button"
                       onClick={onLogoClick}
                       className="shrink-0 cursor-pointer border-0 bg-transparent p-0 lg:hidden"
-                      aria-label="Reset search"
+                      aria-label={t('reset_search')}
                     >
                       <img src={logoUrl} alt="" className="h-10 w-10" />
                     </button>
                   ) : (
                     <img
                       src={logoUrl}
-                      alt="Shelfmark logo"
+                      alt={t('shelfmark_logo')}
                       className="h-10 w-10 shrink-0 lg:hidden"
                     />
                   ))}
@@ -698,14 +699,14 @@ export const Header = forwardRef<HeaderHandle, HeaderProps>(
                       type="button"
                       onClick={onLogoClick}
                       className="hidden shrink-0 cursor-pointer border-0 bg-transparent p-0 lg:block"
-                      aria-label="Reset search"
+                      aria-label={t('reset_search')}
                     >
                       <img src={logoUrl} alt="" className="h-12 w-12" />
                     </button>
                   ) : (
                     <img
                       src={logoUrl}
-                      alt="Shelfmark logo"
+                      alt={t('shelfmark_logo')}
                       className="hidden h-12 w-12 shrink-0 lg:block"
                     />
                   ))}

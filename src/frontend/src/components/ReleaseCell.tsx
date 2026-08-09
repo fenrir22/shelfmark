@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { ColumnSchema, Release } from '../types';
 import { getColorStyleFromHint, getProtocolDotColor, getFormatColor } from '../utils/colorMaps';
 import {
@@ -49,7 +50,7 @@ const formatRelativeTime = (dateString: string): string | null => {
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'Today';
+    if (diffDays === 0) return t('today');
     if (diffDays === 1) return '1 day';
 
     return `${diffDays} days`;
@@ -221,36 +222,36 @@ export const ReleaseCell = ({
       if (publishDate) {
         const relativeTime = formatRelativeTime(publishDate);
         if (relativeTime) {
-          rows.push({ label: 'Added', value: relativeTime });
+          rows.push({ label: t('added'), value: relativeTime });
         }
       }
 
       if (postedDate) {
         const postedDateValue = postedDate.trim();
         const relativeTime = formatRelativeTime(postedDateValue);
-        rows.push({ label: 'Posted', value: relativeTime ?? postedDateValue });
+        rows.push({ label: t('posted'), value: relativeTime ?? postedDateValue });
       }
 
       if (bitrate) {
         const bitrateValue = bitrate.trim();
         if (bitrateValue) {
-          rows.push({ label: 'Bitrate', value: bitrateValue });
+          rows.push({ label: t('bitrate'), value: bitrateValue });
         }
       }
 
       // Add torznab attributes if available (MAM, etc.)
       if (torznabAttrs && Object.keys(torznabAttrs).length > 0) {
         const displayAttrs: Array<{ key: string; label: string }> = [
-          { key: 'description', label: 'Description' },
-          { key: 'year', label: 'Year' },
+          { key: 'description', label: t('description') },
+          { key: 'year', label: t('year') },
           { key: 'genre', label: 'Genre' },
           { key: 'narrator', label: 'Narrator' },
-          { key: 'bitrate', label: 'Bitrate' },
-          { key: 'samplerate', label: 'Sample Rate' },
-          { key: 'runtime', label: 'Runtime' },
-          { key: 'pages', label: 'Pages' },
-          { key: 'publisher', label: 'Publisher' },
-          { key: 'language', label: 'Language' },
+          { key: 'bitrate', label: t('bitrate') },
+          { key: 'samplerate', label: t('sample_rate') },
+          { key: 'runtime', label: t('runtime') },
+          { key: 'pages', label: t('pages') },
+          { key: 'publisher', label: t('publisher') },
+          { key: 'language', label: t('language') },
         ];
 
         for (const attr of displayAttrs) {
@@ -265,10 +266,10 @@ export const ReleaseCell = ({
       const files = toNumberValue(extra?.files);
       const grabs = toNumberValue(extra?.grabs);
       if (files !== undefined && files !== null) {
-        rows.push({ label: 'Files', value: String(files) });
+        rows.push({ label: t('files'), value: String(files) });
       }
       if (grabs !== undefined && grabs !== null) {
-        rows.push({ label: 'Grabs', value: String(grabs) });
+        rows.push({ label: t('grabs'), value: String(grabs) });
       }
 
       let sizeTooltipContent: React.ReactNode = null;
@@ -357,11 +358,11 @@ export const ReleaseCell = ({
       // Indexer name with colored dot indicating protocol (torrent/usenet) and peers count
       const protocol = release.protocol as string | undefined;
       const dotColor = getProtocolDotColor(protocol);
-      let protocolLabel = protocol || 'Unknown';
+      let protocolLabel = protocol || t('unknown');
       if (protocol === 'torrent') {
-        protocolLabel = 'Torrent';
+        protocolLabel = t('torrent');
       } else if (protocol === 'nzb') {
-        protocolLabel = 'Usenet';
+        protocolLabel = t('usenet');
       }
       const peers = release.peers;
 
@@ -488,7 +489,7 @@ export const ReleaseCell = ({
           return (
             <span
               className="inline-flex items-center text-gray-500"
-              title={isAudiobook ? 'Audiobook' : 'Book'}
+              title={isAudiobook ? t('audiobook') : t('book')}
             >
               {icon}
             </span>
@@ -512,7 +513,7 @@ export const ReleaseCell = ({
         return (
           <div
             className="flex items-center justify-start"
-            title={isAudiobook ? 'Audiobook' : 'Book'}
+            title={isAudiobook ? t('audiobook') : t('book')}
           >
             <span
               className={`${colorStyle.bg} ${colorStyle.text} inline-flex w-13 items-center justify-center rounded-lg py-0.5 text-[10px] font-semibold sm:text-[11px]`}
@@ -574,7 +575,7 @@ export const ReleaseCell = ({
             <span className="inline-flex items-center gap-1">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`}
-                title={isOnline ? 'Online' : 'Offline'}
+                title={isOnline ? t('online') : t('offline')}
               />
               {displayValue}
             </span>
@@ -590,7 +591,7 @@ export const ReleaseCell = ({
           {isServerColumn && (
             <span
               className={`mr-1.5 h-2 w-2 shrink-0 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`}
-              title={isOnline ? 'Online' : 'Offline'}
+              title={isOnline ? t('online') : t('offline')}
             />
           )}
           {displayValue}

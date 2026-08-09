@@ -8,6 +8,7 @@ import type { ActivityCardAction } from './activityCardModel';
 import { buildActivityCardModel } from './activityCardModel';
 import { STATUS_BADGE_STYLES, STATUS_TOOLTIP_CLASSES, getProgressConfig } from './activityStyles';
 import type { ActivityItem } from './activityTypes';
+import { t } from '../../i18n';
 
 interface RequestApproveOptions {
   browseOnly?: boolean;
@@ -43,7 +44,7 @@ interface ActivityCardProps {
 
 const BookFallback = () => (
   <div className="flex h-18 w-12 items-center justify-center rounded-sm bg-gray-200 text-[8px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-    No Cover
+    {t('no_cover')}
   </div>
 );
 
@@ -92,56 +93,56 @@ const actionUiConfig = (
   switch (action.kind) {
     case 'download-remove':
       return {
-        title: 'Remove from queue',
+        title: t('remove_from_queue'),
         className: 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'cross',
       };
     case 'download-stop':
       return {
-        title: 'Stop download',
+        title: t('stop_download'),
         className: 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'stop',
       };
     case 'download-dismiss':
       return {
-        title: 'Clear',
+        title: t('clear'),
         className: 'text-gray-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'cross',
       };
     case 'download-retry':
       return {
-        title: 'Retry',
+        title: t('retry'),
         className: 'text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/30',
         icon: 'retry',
       };
     case 'request-approve':
       return {
-        title: 'Approve',
+        title: t('approve'),
         className:
           'text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30',
         icon: 'check',
       };
     case 'request-reject':
       return {
-        title: 'Reject',
+        title: t('reject'),
         className: 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'cross',
       };
     case 'request-cancel':
       return {
-        title: 'Cancel request',
+        title: t('cancel_request'),
         className: 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'cross',
       };
     case 'request-dismiss':
       return {
-        title: 'Clear',
+        title: t('clear'),
         className: 'text-gray-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30',
         icon: 'cross',
       };
     default:
       return {
-        title: 'Action',
+        title: t('action'),
         className: 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700',
         icon: 'cross',
       };
@@ -218,11 +219,11 @@ const toOptionalText = (value: unknown): string | undefined => {
 const toSourceLabel = (value: unknown): string => {
   const text = toOptionalText(value);
   if (!text) {
-    return 'Any Source';
+    return t('any_source');
   }
   const normalized = text.trim().toLowerCase();
   if (normalized === '*' || normalized === 'any' || normalized === 'all') {
-    return 'Any Source';
+    return t('any_source');
   }
   return text
     .split(/[_\s-]+/)
@@ -344,22 +345,22 @@ const ReviewInlinePanel = ({
       <div
         className={`grid grid-cols-1 ${showSourceField ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-x-3 gap-y-1`}
       >
-        <DetailField label="Requested" value={requestedAt} />
-        <DetailField label="Type" value={requestType} />
-        {showSourceField && <DetailField label="Source" value={sourceLabel} />}
+        <DetailField label={t('requested')} value={requestedAt} />
+        <DetailField label={t('type')} value={requestType} />
+        {showSourceField && <DetailField label={t('source')} value={sourceLabel} />}
       </div>
 
       {hasAttachedRelease ? (
         <div className="space-y-2">
           <p className="text-[11px] font-medium tracking-wide uppercase opacity-70">
-            Attached File
+            {t('attached_file')}
           </p>
           <div className="grid grid-cols-1 gap-x-3 gap-y-1">
-            <DetailField label="Title" value={fileTitle} />
+            <DetailField label={t('title')} value={fileTitle} />
           </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            <DetailField label="Size" value={fileSize} />
-            <DetailField label="Format" value={fileFormat.toUpperCase()} />
+            <DetailField label={t('size')} value={fileSize} />
+            <DetailField label={t('format')} value={fileFormat.toUpperCase()} />
           </div>
         </div>
       ) : (
@@ -373,7 +374,7 @@ const ReviewInlinePanel = ({
           disabled={isSubmitting}
           className="rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-60"
         >
-          {isSubmitting ? 'Working...' : approveLabel}
+          {isSubmitting ? t('working') : approveLabel}
         </button>
         {canMarkAsApprovedWithoutRelease && (
           <button
@@ -382,7 +383,7 @@ const ReviewInlinePanel = ({
             disabled={isSubmitting}
             className="rounded-md border border-(--border-muted) px-2.5 py-1.5 text-xs transition-colors hover:bg-(--hover-surface) disabled:opacity-50"
           >
-            {isSubmitting ? 'Working...' : 'Manually Mark as Approved'}
+            {isSubmitting ? t('working') : t('manually_mark_approved')}
           </button>
         )}
         {canBrowseAlternatives && hasAttachedRelease && (
@@ -392,7 +393,7 @@ const ReviewInlinePanel = ({
             disabled={isSubmitting}
             className="rounded-md border border-(--border-muted) px-2.5 py-1.5 text-xs transition-colors hover:bg-(--hover-surface) disabled:opacity-50"
           >
-            Browse Alternatives
+            {t('browse_alternatives')}
           </button>
         )}
       </div>
@@ -436,12 +437,12 @@ const RejectInlinePanel = ({
         Reject request for <span className="opacity-80">{itemTitle || 'Untitled request'}</span>
       </p>
       <textarea
-        aria-label="Optional note shown to the user"
+        aria-label={t('optional_note_shown_to_user')}
         value={rejectNote}
         onChange={(event) => setRejectNote(event.target.value.slice(0, MAX_ADMIN_NOTE_LENGTH))}
         rows={3}
         maxLength={MAX_ADMIN_NOTE_LENGTH}
-        placeholder="Optional note shown to the user"
+        placeholder={t('optional_note_shown_to_user')}
         className="min-h-[72px] w-full resize-y rounded-md border border-(--border-muted) bg-(--bg) px-2.5 py-2 text-xs focus:border-red-500 focus:ring-2 focus:ring-red-500/30 focus:outline-hidden"
         disabled={isSubmitting}
       />
@@ -456,7 +457,7 @@ const RejectInlinePanel = ({
             disabled={isSubmitting}
             className="rounded-md px-2.5 py-1.5 text-xs transition-colors hover:bg-(--hover-surface) disabled:opacity-50"
           >
-            Cancel
+            {t('cancel')}
           </button>
           <button
             type="button"
@@ -464,7 +465,7 @@ const RejectInlinePanel = ({
             disabled={isSubmitting}
             className="rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-60"
           >
-            {isSubmitting ? 'Rejecting...' : 'Reject'}
+            {isSubmitting ? t('rejecting') : t('reject')}
           </button>
         </div>
       </div>
@@ -633,7 +634,7 @@ export const ActivityCard = ({
 
   const bookData = asRecord(reviewRecord?.book_data);
   const releaseData = asRecord(reviewRecord?.release_data);
-  const bookTitle = toOptionalText(bookData.title) || 'Unknown title';
+  const bookTitle = toOptionalText(bookData.title) || t('unknown_title');
   const fileTitle = toOptionalText(releaseData.title) || bookTitle;
   const fileFormat =
     toOptionalText(releaseData.format) ||
@@ -651,9 +652,9 @@ export const ActivityCard = ({
   const showSourceField = reviewRecord?.request_level === 'release';
   const isRetryAfterFailure = Boolean(toOptionalText(reviewRecord?.last_failure_reason));
 
-  let approveLabel = 'Approve Attached File';
+  let approveLabel = t('approve_attached_file');
   if (requiresBrowseBeforeApprove) {
-    approveLabel = isRetryAfterFailure ? 'Browse Releases To Retry' : 'Browse Releases To Approve';
+    approveLabel = isRetryAfterFailure ? t('browse_releases_to_retry') : t('browse_releases_to_approve');
   }
   const canMarkAsApprovedWithoutRelease = requiresBrowseBeforeApprove && !hasAttachedRelease;
 
@@ -663,7 +664,7 @@ export const ActivityCard = ({
 
   const rejectConfirmHandler = onRequestRejectConfirm || onRequestReject;
   const requestedAt = reviewRecord ? formatDateTime(reviewRecord.created_at) : '';
-  const requestType = reviewRecord?.content_type === 'audiobook' ? 'Audiobook' : 'Book';
+  const requestType = reviewRecord?.content_type === 'audiobook' ? t('audiobook') : t('book');
   const titleAuthorLine = item.author ? `${item.title} — ${item.author}` : item.title;
   const titleLineClassName = isDetailsExpanded
     ? 'text-sm leading-tight min-w-0 whitespace-normal wrap-break-word'
@@ -687,7 +688,7 @@ export const ActivityCard = ({
 
   const titleNode =
     canShowDownloadLink && item.downloadBookId ? (
-      <Tooltip content="Download file" position="top" delay={0}>
+      <Tooltip content={t('download_file')} position="top" delay={0}>
         <a
           href={withBasePath(`/api/localdownload?id=${encodeURIComponent(item.downloadBookId)}`)}
           className="text-sky-600 hover:underline"
@@ -744,7 +745,7 @@ export const ActivityCard = ({
                 const icon =
                   action.kind === 'request-approve' && isRetryAfterFailure ? 'retry' : config.icon;
                 const actionTitle =
-                  action.kind === 'request-approve' && isRetryAfterFailure ? 'Retry' : config.title;
+                  action.kind === 'request-approve' && isRetryAfterFailure ? t('retry') : config.title;
                 return (
                   <Tooltip
                     key={actionKey(action)}
@@ -764,7 +765,7 @@ export const ActivityCard = ({
               })}
               {showRequestDetailsToggle && onRequestDetailsToggle && (
                 <IconButton
-                  title={isDetailsExpanded ? 'Hide details' : 'Show details'}
+                  title={isDetailsExpanded ? t('hide_details') : t('show_details')}
                   className="hover-action text-gray-500"
                   onClick={onRequestDetailsToggle}
                 >

@@ -1,8 +1,10 @@
 """External Cloudflare bypasser using FlareSolverr."""
 
 import random
+import threading
 import time
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import requests
 
@@ -29,6 +31,77 @@ READ_TIMEOUT_BUFFER = 15
 MAX_RETRY = 5
 BACKOFF_BASE = 1.0
 BACKOFF_CAP = 10.0
+
+# Cookie storage - shared with requests library for Cloudflare bypass
+_cf_cookies: dict[str, dict] = {}
+_cf_cookies_lock = threading.Lock()
+
+# User-Agent storage - Cloudflare ties cf_clearance to the UA that solved the challenge
+_cf_user_agents: dict[str, str] = {}
+
+# Protection cookie names we care about (Cloudflare and DDoS-Guard)
+CF_COOKIE_NAMES = {"cf_clearance", "__cf_bm", "cf_chl_2", "cf_chl_prog"}
+DDG_COOKIE_NAMES = {
+    "__ddg1_",
+    "__ddg2_",
+    "__ddg5_",
+    "__ddg8_",
+    "__ddg9_",
+    "__ddg10_",
+    "__ddgid_",
+    "__ddgmark_",
+    "ddg_last_challenge",
+}
+
+
+def _get_base_domain(domain: str) -> str:
+    """Extract base domain from hostname (e.g., 'www.example.com' -> 'example.com')."""
+    return ".".join(domain.split(".")[-2:]) if "." in domain else domain
+
+
+def _store_cookies_from_flaresolverr(url: str, cookies: list[dict], user_agent: str | None) -> None:
+    """Store cookies and user agent from FlareSolverr response."""
+    if not cookies:
+        return
+    
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    base_domain = _get_base_domain(hostname)
+    
+    # Filter and store cookies
+    cookie_dict = {}
+    for cookie in cookies:
+        name = cookie.get("name", "")
+        value = cookie.get("value", "")
+        if name and value:
+            # Store all protection cookies
+            if name in CF_COOKIE_NAMES or name in DDG_COOKIE_NAMES or name.startswith("cf_") or name.startswith("__ddg"):
+                cookie_dict[name] = value
+    
+    if cookie_dict:
+        with _cf_cookies_lock:
+            _cf_cookies[base_domain] = cookie_dict
+            logger.debug("Stored %d cookies for %s from FlareSolverr", len(cookie_dict), base_domain)
+    
+    # Store user agent
+    if user_agent:
+        with _cf_cookies_lock:
+            _cf_user_agents[base_domain] = user_agent
+            logger.debug("Stored user agent for %s from FlareSolverr", base_domain)
+
+
+def get_cf_cookies_for_domain(domain: str) -> dict[str, str]:
+    """Get CF cookies for a domain."""
+    base_domain = _get_base_domain(domain)
+    with _cf_cookies_lock:
+        return _cf_cookies.get(base_domain, {})
+
+
+def get_cf_user_agent_for_domain(domain: str) -> str | None:
+    """Get CF user agent for a domain."""
+    base_domain = _get_base_domain(domain)
+    with _cf_cookies_lock:
+        return _cf_user_agents.get(base_domain)
 
 
 def _coerce_config_str(value: object, default: str) -> str:
@@ -99,6 +172,12 @@ def _fetch_via_bypasser(target_url: str) -> str | None:
         if not html:
             logger.warning("External bypasser returned empty response for '%s'", target_url)
             return None
+
+        # Extract and store cookies and user agent from FlareSolverr response
+        if solution:
+            cookies = solution.get("cookies", [])
+            user_agent = solution.get("userAgent")
+            _store_cookies_from_flaresolverr(target_url, cookies, user_agent)
 
     except requests.exceptions.Timeout:
         logger.warning(

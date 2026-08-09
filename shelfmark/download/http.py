@@ -111,18 +111,18 @@ def get_bypassed_page(
 
 
 def get_cf_cookies_for_domain(domain: str) -> dict[str, str]:
-    """Get CF cookies - only available with internal bypasser."""
+    """Get CF cookies from active bypasser."""
     if _is_using_external_bypasser():
-        logger.debug("External bypasser in use, CF cookies not available for %s", domain)
-        return {}
+        from shelfmark.bypass import external_bypasser
+        return external_bypasser.get_cf_cookies_for_domain(domain)
     return _get_internal_bypasser().get_cf_cookies_for_domain(domain)
 
 
 def get_cf_user_agent_for_domain(domain: str) -> str | None:
-    """Get CF user agent - only available with internal bypasser."""
+    """Get CF user agent from active bypasser."""
     if _is_using_external_bypasser():
-        logger.debug("External bypasser in use, CF user agent not available for %s", domain)
-        return None
+        from shelfmark.bypass import external_bypasser
+        return external_bypasser.get_cf_user_agent_for_domain(domain)
     return _get_internal_bypasser().get_cf_user_agent_for_domain(domain)
 
 

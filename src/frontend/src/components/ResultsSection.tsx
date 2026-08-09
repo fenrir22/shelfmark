@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { t } from '../i18n';
 import { useSearchMode } from '../contexts/SearchModeContext';
 import { SORT_OPTIONS } from '../data/filterOptions';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -103,7 +104,7 @@ export const ResultsSection = ({
             rel="noopener noreferrer"
             className="animate-pop-up inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
           >
-            View list on Hardcover
+            {t('view_list_on_hardcover')}
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
@@ -126,8 +127,8 @@ export const ResultsSection = ({
                   ? activeViewClasses
                   : 'hover-action text-gray-900 dark:text-gray-100'
               }`}
-              title="Card view"
-              aria-label="Card view"
+              title={t('card_view')}
+              aria-label={t('card_view')}
               aria-pressed={viewMode === 'card'}
             >
               <svg
@@ -153,8 +154,8 @@ export const ResultsSection = ({
                 ? activeViewClasses
                 : 'hover-action text-gray-900 dark:text-gray-100'
             }`}
-            title="Compact view"
-            aria-label="Compact view"
+            title={t('compact_view')}
+            aria-label={t('compact_view')}
             aria-pressed={viewMode === 'compact'}
           >
             <svg
@@ -178,8 +179,8 @@ export const ResultsSection = ({
                 ? activeViewClasses
                 : 'hover-action text-gray-900 dark:text-gray-100'
             }`}
-            title="List view"
-            aria-label="List view"
+            title={t('list_view')}
+            aria-label={t('list_view')}
             aria-pressed={viewMode === 'list'}
           >
             <svg
@@ -252,7 +253,7 @@ export const ResultsSection = ({
           })}
         </div>
       )}
-      {books.length === 0 && <div className="mt-4 text-sm opacity-80">No results found.</div>}
+      {books.length === 0 && <div className="mt-4 text-sm opacity-80">{t('no_results_found')}</div>}
 
       {/* Load More button (universal mode pagination) */}
       {searchMode === 'universal' && hasMore && onLoadMore && (
@@ -285,10 +286,10 @@ export const ResultsSection = ({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Loading...
+                {t('loading')}
               </span>
             ) : (
-              'Load More'
+              t('load_more')
             )}
           </button>
           {totalFound !== undefined && totalFound > 0 && (
@@ -310,7 +311,7 @@ interface SortControlProps {
 
 // Default universal mode sort options (fallback if not provided by API)
 const DEFAULT_UNIVERSAL_SORT_OPTIONS: SortOption[] = [
-  { value: 'relevance', label: 'Most relevant' },
+  { value: 'relevance', label: t('most_relevant') },
 ];
 
 const SortControl = ({ value, onChange, metadataSortOptions }: SortControlProps) => {
@@ -339,7 +340,7 @@ const SortControl = ({ value, onChange, metadataSortOptions }: SortControlProps)
           } animate-pop-up`}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
-          aria-label="Change sort order"
+          aria-label={t('change_sort_order')}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -360,7 +361,7 @@ const SortControl = ({ value, onChange, metadataSortOptions }: SortControlProps)
       )}
     >
       {({ close }) => (
-        <div role="listbox" aria-label="Sort results">
+        <div role="listbox" aria-label={t('sort_results')}>
           {sortOptions.map((option) => {
             const isSelected = option.value === selected.value;
             let selectedClassName = '';

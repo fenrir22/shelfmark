@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 
+import { t } from '../../../i18n';
 import type { TextFieldConfig } from '../../../types/settings';
 import {
   buildNamingTemplatePreview,
@@ -38,6 +39,12 @@ const groupTokens = (tokens: NamingTemplateToken[]) => {
       tokens: tokens.filter((token) => token.group === group),
     }))
     .filter((entry) => entry.tokens.length > 0);
+};
+
+const GROUP_LABELS: Record<string, string> = {
+  Core: 'core',
+  Universal: 'universal',
+  Files: 'files',
 };
 
 export const NamingTemplateField = ({
@@ -124,19 +131,19 @@ export const NamingTemplateField = ({
       )}
 
       <div className="w-full rounded-lg border border-(--border-muted) bg-(--bg-soft) px-3 py-2 text-sm leading-relaxed break-words">
-        <span className="opacity-60">Preview:</span>{' '}
+        <span className="opacity-60">{t('preview')}</span>{' '}
         <code className="font-mono text-(--text)">{preview.value}</code>
       </div>
 
       <details className="min-w-0">
         <summary className="cursor-pointer text-xs font-semibold text-sky-500 select-none hover:text-sky-400 dark:text-sky-400 dark:hover:text-sky-300">
-          Insert variable
+          {t('insert_variable')}
         </summary>
         <div className="mt-1.5 space-y-3 rounded-lg border border-(--border-muted) bg-(--bg-soft) p-3">
           {tokenGroups.map((group) => (
             <div key={group.group} className="min-w-0">
               <div className="mb-1.5 text-[11px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                {group.group}
+                {t(GROUP_LABELS[group.group] ?? group.group)}
               </div>
               <div className="flex min-w-0 flex-wrap gap-1.5">
                 {group.tokens.map((token) => (
