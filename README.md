@@ -48,8 +48,31 @@ docker run -d \
 
 Or use the [docker-compose.yml](docker-compose.yml) from this repo:
 
+```yaml
+services:
+  shelfmark:
+    image: ghcr.io/fenrir22/shelfmark:dev
+    container_name: shelfmark
+    restart: unless-stopped
+    ports:
+      - "${FLASK_PORT:-8084}:8084"
+    environment:
+      FLASK_PORT: "${FLASK_PORT:-8084}"
+      DEBUG: "${DEBUG:-false}"
+      OIDC_AUTO_REDIRECT: "${OIDC_AUTO_REDIRECT:-false}"
+    volumes:
+      - ./config:/config
+      - ./books:/books
+      - /var/log/shelfmark:/var/log/shelfmark
+      - /tmp/shelfmark:/tmp/shelfmark
+```
+
+Then start it:
+
 ```bash
-docker compose up -d --build
+mkdir -p config books log tmp
+cp .env.example .env
+docker compose up -d
 ```
 
 > **Note:** `latest` and versioned tags are only published when a git tag `v*` is pushed.

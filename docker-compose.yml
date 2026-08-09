@@ -3,10 +3,7 @@
 
 services:
   shelfmark:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: shelfmark
+    image: ghcr.io/fenrir22/shelfmark:dev
     container_name: shelfmark
     restart: unless-stopped
     ports:
@@ -20,10 +17,14 @@ services:
       - ${BOOKS_PATH:-./books}:/books
       - ${LOG_PATH:-/var/log/shelfmark}:/var/log/shelfmark
       - ${TMP_PATH:-/tmp/shelfmark}:/tmp/shelfmark
-      - ./shelfmark:/app/shelfmark:ro
-      - ./frontend-dist:/app/frontend-dist:ro
     networks:
       - app-net
+
+# Build from source instead of pulling the prebuilt image:
+#   build:
+#     context: .
+#     dockerfile: Dockerfile
+#     target: shelfmark
 
 networks:
   app-net:
