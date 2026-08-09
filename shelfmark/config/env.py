@@ -109,8 +109,8 @@ ENABLE_LOGGING = string_to_bool(os.getenv("ENABLE_LOGGING", "true"))
 # Flask configuration - needed before app starts
 # =============================================================================
 
-FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
-FLASK_PORT = int(os.getenv("FLASK_PORT", "8084"))
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0") or "0.0.0.0"
+FLASK_PORT = int(os.getenv("FLASK_PORT", "8084") or "8084")
 
 
 # =============================================================================
