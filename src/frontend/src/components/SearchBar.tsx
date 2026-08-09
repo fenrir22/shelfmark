@@ -209,7 +209,8 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
     const { hoverTimeoutRef: selectorHoverTimeout, clearHoverTimeout } = useSearchBarHoverTimeout();
 
     const hasMultipleContentTypes = !allowedContentTypes || allowedContentTypes.length !== 1;
-    const showContentTypeSelector = !!onContentTypeChange && hasMultipleContentTypes;
+    const showContentTypeSelector =
+      searchMode !== 'direct' && !!onContentTypeChange && hasMultipleContentTypes;
     const showQueryTargetSelector = showContentTypeSelector || queryTargets.length > 1;
     const inputPaddingClass = showQueryTargetSelector ? 'pl-3 rounded-r-full' : 'pl-4 rounded-full';
     const searchInputClass = [
