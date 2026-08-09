@@ -33,7 +33,7 @@ import { useActivity } from './hooks/useActivity';
 import { useAuth } from './hooks/useAuth';
 import { useDownloadTracking } from './hooks/useDownloadTracking';
 import { useMediaQuery } from './hooks/useMediaQuery';
-import { useMountEffect } from './hooks/useMountEffect';
+import { useDependencyEffect, useMountEffect } from './hooks/useMountEffect';
 import { useRealtimeStatus } from './hooks/useRealtimeStatus';
 import { useRequestPolicy } from './hooks/useRequestPolicy';
 import { useRequests } from './hooks/useRequests';
@@ -633,6 +633,11 @@ function App() {
   const [configuredCombinedMetadataProvider, setConfiguredCombinedMetadataProvider] = useState<
     string | null
   >(null);
+  useDependencyEffect(() => {
+    if (config?.search_page_title) {
+      document.title = config.search_page_title;
+    }
+  }, [config?.search_page_title]);
   const [activeQueryTarget, setActiveQueryTarget] = useState('general');
   const [downloadsSidebarOpen, setDownloadsSidebarOpen] = useState(false);
   const [sidebarPinnedOpen, setSidebarPinnedOpen] = useState<boolean>(() =>
