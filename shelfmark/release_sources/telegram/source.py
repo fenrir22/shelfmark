@@ -585,7 +585,7 @@ class TelegramGroupSource(TelegramSource):
                     file_name = attr.file_name
                     break
 
-            title = file_name or getattr(msg, "text", "") or "Unknown"
+            title = str(Path(file_name).stem) if file_name else (getattr(msg, "text", "") or "Unknown")
             extension = Path(file_name).suffix.lstrip(".").lower() if file_name else None
 
             chat_id = getattr(msg, "chat_id", None)

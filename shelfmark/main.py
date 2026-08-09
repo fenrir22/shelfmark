@@ -1155,6 +1155,13 @@ def api_config() -> Response | tuple[Response, int]:
             get_provider_search_fields,
             get_provider_sort_options,
         )
+        from shelfmark.release_sources.telegram.client import client_manager
+
+        telegram_enabled = bool(app_config.get("TELEGRAM_ENABLED", False))
+        if telegram_enabled:
+            telegram_status = client_manager.status
+        else:
+            telegram_status = "disabled"
 
         db_user_id = get_session_db_user_id(session)
 
@@ -1224,6 +1231,7 @@ def api_config() -> Response | tuple[Response, int]:
             "onboarding_complete": _get_onboarding_complete(),
             "telegram_group_enabled": bool(app_config.get("TELEGRAM_GROUP_ENABLED", False))
             and bool(str(app_config.get("TELEGRAM_GROUP_USERNAME", "") or "").strip()),
+            "telegram_status": telegram_status,
             # Default sort orders
             "default_sort": app_config.get(
                 "AA_DEFAULT_SORT", "relevance"

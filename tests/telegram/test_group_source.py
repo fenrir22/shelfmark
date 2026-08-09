@@ -26,7 +26,7 @@ def test_convert_messages_to_releases_basic():
     assert len(releases) == 1
     release = releases[0]
     assert release.source == "telegram_group"
-    assert release.title == "Manuale.pdf"
+    assert release.title == "Manuale"
     assert release.format == "pdf"
     assert release.size_bytes == 5242880
     assert release.size == "5.0 MB"
@@ -162,7 +162,7 @@ def test_search_uses_numeric_topic_id(monkeypatch):
 
     captured = {}
 
-    def fake_search(entity_arg, query, limit=50, reply_to=None, offset_id=0):
+    def fake_search(entity_arg, query, limit=50, reply_to=None, add_offset=0):
         captured["reply_to"] = reply_to
         return []
 
@@ -203,7 +203,7 @@ def test_search_parses_tme_link_topic(monkeypatch):
 
     captured = {}
 
-    def fake_search(entity_arg, query, limit=50, reply_to=None, offset_id=0):
+    def fake_search(entity_arg, query, limit=50, reply_to=None, add_offset=0):
         captured["reply_to"] = reply_to
         return []
 
@@ -245,7 +245,7 @@ def test_search_targets_forum_topic(monkeypatch):
 
     captured = {}
 
-    def fake_search(entity_arg, query, limit=50, reply_to=None, offset_id=0):
+    def fake_search(entity_arg, query, limit=50, reply_to=None, add_offset=0):
         captured["reply_to"] = reply_to
         return []
 

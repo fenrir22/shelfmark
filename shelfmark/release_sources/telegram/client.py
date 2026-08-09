@@ -30,6 +30,7 @@ TELEGRAM_CONNECT_TIMEOUT = 30
 TELEGRAM_DEFAULT_RESPONSE_TIMEOUT = 60
 TELEGRAM_MAX_RESPONSE_TIMEOUT = 300
 TELEGRAM_RECONNECT_DELAY = 5.0
+TELEGRAM_HEARTBEAT_INTERVAL = 30.0
 # Downloads wait as long as progress is being made; abort only after this many
 # seconds without any progress (protects against network stalls without killing
 # slow-but-active transfers of multi-gigabyte files).
@@ -105,10 +106,22 @@ class TelegramClientManager:
         self._initialized = True
         self._status: str = "disconnected"
         self._username: str | None = None
+        self._reconnect_lock = threading.Lock()
+        self._api_id: int | None = None
+        self._api_hash: str | None = None
+        self._heartbeat_task: asyncio.Task[Any] | None = None
+        self._last_heartbeat: float = 0
 
     @property
     def is_connected(self) -> bool:
-        return self._connected and self._client is not None
+        if not (self._connected and self._client is not None):
+            return False
+        # Consider the connection stale if no heartbeat in 2× the interval
+        if self._last_heartbeat > 0:
+            elapsed = time.time() - self._last_heartbeat
+            if elapsed > TELEGRAM_HEARTBEAT_INTERVAL * 2:
+                return False
+        return True
 
     @property
     def status(self) -> str:
@@ -117,6 +130,68 @@ class TelegramClientManager:
     @property
     def username(self) -> str | None:
         return self._username
+
+    def ensure_connected(self) -> bool:
+        """Check connectivity and auto-reconnect if needed."""
+        if self.is_connected:
+            return True
+        if self._api_id is None or self._api_hash is None or self._session_path is None:
+            return False
+        return self._reconnect()
+
+    def _reconnect(self) -> bool:
+        """Reconnect the Telegram client if disconnected."""
+        if not self._reconnect_lock.acquire(blocking=False):
+            return False
+        try:
+            if self.is_connected:
+                return True
+            if self._api_id is None or self._api_hash is None or self._session_path is None:
+                return False
+            logger.info("Auto-reconnecting Telegram client...")
+            self._connected = False
+            self._status = "reconnecting"
+            connected = self.connect(
+                api_id=self._api_id,
+                api_hash=self._api_hash,
+                session_path=str(self._session_path),
+            )
+            if connected:
+                self._start_heartbeat()
+                logger.info("Telegram client auto-reconnected as @%s", self._username)
+            return connected
+        except Exception:
+            logger.exception("Telegram auto-reconnect failed")
+            self._status = "error"
+            return False
+        finally:
+            self._reconnect_lock.release()
+
+    async def _heartbeat_loop(self) -> None:
+        """Periodic ping to detect connection loss."""
+        while self._connected and self._client is not None:
+            await asyncio.sleep(TELEGRAM_HEARTBEAT_INTERVAL)
+            if not self._connected or self._client is None:
+                break
+            try:
+                await self._client.get_me()
+                self._last_heartbeat = time.time()
+            except Exception:
+                logger.warning("Telegram heartbeat failed — connection lost")
+                self._connected = False
+                self._status = "disconnected"
+                break
+
+    def _start_heartbeat(self) -> None:
+        """Launch the heartbeat coroutine in the event loop."""
+        if self._loop is None or not self._loop.is_running():
+            return
+        try:
+            self._heartbeat_task = asyncio.run_coroutine_threadsafe(
+                self._heartbeat_loop(), self._loop
+            )
+        except Exception:
+            logger.debug("Failed to start heartbeat", exc_info=True)
 
     @property
     def auth_state(self) -> TelegramAuthState:
@@ -176,6 +251,7 @@ class TelegramClientManager:
                 self._username = getattr(me, "username", None) or str(getattr(me, "id", ""))
                 self._connected = True
                 self._status = "connected"
+                self._last_heartbeat = time.time()
                 logger.info("Telegram client connected as @%s", self._username)
                 return True
 
@@ -193,8 +269,14 @@ class TelegramClientManager:
             return False
 
     def connect(self, api_id: int, api_hash: str, session_path: str) -> bool:
+        self._api_id = api_id
+        self._api_hash = api_hash
+        self._session_path = Path(session_path)
         try:
-            return self._run_sync(self._connect_async(api_id, api_hash, session_path))
+            result = self._run_sync(self._connect_async(api_id, api_hash, session_path))
+            if result:
+                self._start_heartbeat()
+            return result
         except Exception:
             logger.exception("Telegram connect failed")
             self._status = "error"
@@ -287,6 +369,9 @@ class TelegramClientManager:
 
     async def _disconnect_async(self) -> None:
         try:
+            if self._heartbeat_task is not None:
+                self._heartbeat_task.cancel()
+                self._heartbeat_task = None
             if self._client is not None:
                 await self._client.disconnect()
         except Exception:
@@ -323,7 +408,7 @@ class TelegramClientManager:
         return await self._client.get_entity(entity_ref)
 
     def resolve_bot_entity(self, bot_username: str) -> Any:
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(self._resolve_bot_entity_async(bot_username))
@@ -335,7 +420,7 @@ class TelegramClientManager:
         return await self._client.send_message(entity, text)
 
     def send_message(self, entity: Any, text: str) -> Any:
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(self._send_message_async(entity, text))
@@ -348,7 +433,7 @@ class TelegramClientManager:
 
     def get_message(self, chat_id: int, message_id: int) -> Any:
         """Get a specific message by chat_id and message_id."""
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(self._get_message_async(chat_id, message_id))
@@ -455,7 +540,7 @@ class TelegramClientManager:
         and document file names. Only reads existing history. When ``reply_to``
         is a forum topic root message id, the search is limited to that topic.
         """
-        if not self.is_connected:
+        if not self.ensure_connected():
             return []
         try:
             return self._run_sync(
@@ -500,7 +585,7 @@ class TelegramClientManager:
 
     def find_forum_topic(self, entity: Any, topic_title: str) -> int | None:
         """Find a forum topic's root message id by its title."""
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(
@@ -523,7 +608,7 @@ class TelegramClientManager:
 
         Useful when only the group's display name is known (no username).
         """
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(
@@ -620,7 +705,7 @@ class TelegramClientManager:
         timeout: float = TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
         sent_message: Any = None,
     ) -> TelegramBotResponse:
-        if not self.is_connected:
+        if not self.ensure_connected():
             return TelegramBotResponse()
         try:
             return self._run_sync(
@@ -633,7 +718,7 @@ class TelegramClientManager:
 
     def click_message_button(self, message: Any, button_data: bytes | str) -> Any:
         """Click a button on a message using message.click()."""
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(self._click_message_button_async(message, button_data))
@@ -702,7 +787,7 @@ class TelegramClientManager:
         after_message_id: int = 0,
     ) -> TelegramBotResponse:
         """Wait for a message containing a document from the bot."""
-        if not self.is_connected:
+        if not self.ensure_connected():
             return TelegramBotResponse()
         try:
             return self._run_sync(
@@ -737,7 +822,7 @@ class TelegramClientManager:
         return await message.click(data=button.data)
 
     def click_callback(self, entity: Any, button: KeyboardButtonCallback) -> Any:
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
         try:
             return self._run_sync(self._click_callback_async(entity, button))
@@ -807,7 +892,7 @@ class TelegramClientManager:
         entity: Any,
         timeout: float = TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
     ) -> TelegramBotResponse:
-        if not self.is_connected:
+        if not self.ensure_connected():
             return TelegramBotResponse()
         try:
             return self._run_sync(
@@ -860,7 +945,7 @@ class TelegramClientManager:
         aborts with ``None`` if no progress is reported for ``idle_timeout``
         seconds, or when ``cancel_flag`` is set.
         """
-        if not self.is_connected:
+        if not self.ensure_connected():
             return None
 
         loop = self._ensure_loop()
