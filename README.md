@@ -20,6 +20,41 @@ Documentation for the Telegram source is in the settings page under **Settings â
 
 ---
 
+## ðŸ³ Docker Image (GHCR)
+
+Prebuilt images are published to the GitHub Container Registry and rebuilt automatically on every push to `main`:
+
+| Image | Tag | Platform |
+|---|---|---|
+| `ghcr.io/fenrir22/shelfmark` | `dev` | linux/amd64, linux/arm64 |
+| `ghcr.io/fenrir22/shelfmark-lite` | `dev` | linux/amd64, linux/arm64 |
+
+Pull the image:
+
+```bash
+docker pull ghcr.io/fenrir22/shelfmark:dev
+```
+
+Run it:
+
+```bash
+docker run -d \
+  --name shelfmark \
+  -p 8084:8084 \
+  -v /your/config/path:/config \
+  -v /your/download/path:/books \
+  ghcr.io/fenrir22/shelfmark:dev
+```
+
+Or use the [docker-compose.yml](docker-compose.yml) from this repo:
+
+```bash
+docker compose up -d --build
+```
+
+> **Note:** `latest` and versioned tags are only published when a git tag `v*` is pushed.
+
+---
 
 Shelfmark is a self-hosted web interface for searching and requesting books and audiobooks across multiple sources. Bring your own sources, metadata providers, and download clients to build a single hub for your digital library. Supports multiple users with a built-in request system, so you can share your instance with others and let them browse and request books on their own.
 
