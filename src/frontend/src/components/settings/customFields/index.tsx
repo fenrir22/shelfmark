@@ -5,6 +5,7 @@ import { OidcAdminHint } from './OidcAdminHint';
 import { OidcEnvInfo } from './OidcEnvInfo';
 import { RequestPolicyGridField } from './RequestPolicyGridField';
 import { SettingsLabel } from './SettingsLabel';
+import { SiteBrandingField } from './SiteBrandingField';
 import type {
   CustomSettingsFieldLayout,
   CustomSettingsFieldLayoutContext,
@@ -53,6 +54,9 @@ const CUSTOM_FIELD_DEFINITIONS: Record<string, CustomFieldDefinition> = {
   },
   settings_label: {
     renderer: SettingsLabel,
+  },
+  site_branding: {
+    renderer: SiteBrandingField,
   },
   oidc_admin_hint: {
     renderer: OidcAdminHint,

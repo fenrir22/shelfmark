@@ -387,6 +387,13 @@ def general_settings() -> list[SettingsField]:
             default="Shelfmark",
             placeholder="Shelfmark",
         ),
+        CustomComponentField(
+            key="site_branding",
+            component="site_branding",
+            label="Site Logo, Favicon & Mascot",
+            description="Upload a custom logo (shown next to the search bar), favicon and mascot. PNG, JPEG, WebP, GIF, ICO or AVIF up to 2 MB.",
+            wrap_in_field_wrapper=True,
+        ),
         TextField(
             key="CALIBRE_WEB_URL",
             label="Library URL",

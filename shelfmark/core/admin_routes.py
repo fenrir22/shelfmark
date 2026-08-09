@@ -441,6 +441,39 @@ def register_admin_routes(app: Flask, user_db: UserDB) -> None:
 
     register_admin_settings_routes(app, user_db, _require_admin)
 
+    @app.route("/api/admin/branding/asset", methods=["POST"])
+    @_require_admin
+    def admin_upload_branding_asset() -> Response | tuple[Response, int]:
+        """Upload a custom site logo or favicon."""
+        from shelfmark.core.branding import save_asset
+
+        kind = (request.form.get("kind") or "").strip().lower()
+        file = request.files.get("file")
+        success, message = save_asset(kind, file)
+        if not success:
+            return jsonify({"success": False, "message": message}), 400
+        return jsonify({"success": True, "message": message})
+
+    @app.route("/api/admin/branding/asset", methods=["DELETE"])
+    @_require_admin
+    def admin_reset_branding_asset() -> Response | tuple[Response, int]:
+        """Remove a custom site logo or favicon, restoring the default."""
+        from shelfmark.core.branding import reset_asset
+
+        kind = (request.form.get("kind") or request.args.get("kind") or "").strip().lower()
+        success, message = reset_asset(kind)
+        if not success:
+            return jsonify({"success": False, "message": message}), 400
+        return jsonify({"success": True, "message": message})
+
+    @app.route("/api/admin/branding", methods=["GET"])
+    @_require_admin
+    def admin_branding_status() -> Response:
+        """Return which custom branding assets are currently uploaded."""
+        from shelfmark.core.branding import branding_status
+
+        return jsonify(branding_status())
+
     @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
     @_require_admin
     def admin_delete_user(user_id: int) -> Response | tuple[Response, int]:

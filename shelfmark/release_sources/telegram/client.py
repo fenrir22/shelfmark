@@ -30,6 +30,10 @@ TELEGRAM_CONNECT_TIMEOUT = 30
 TELEGRAM_DEFAULT_RESPONSE_TIMEOUT = 60
 TELEGRAM_MAX_RESPONSE_TIMEOUT = 300
 TELEGRAM_RECONNECT_DELAY = 5.0
+# Downloads wait as long as progress is being made; abort only after this many
+# seconds without any progress (protects against network stalls without killing
+# slow-but-active transfers of multi-gigabyte files).
+TELEGRAM_DOWNLOAD_IDLE_TIMEOUT = 300
 
 
 @dataclass
@@ -657,15 +661,48 @@ class TelegramClientManager:
         output_path: str,
         progress_callback: Callable[[int, int], None] | None = None,
         cancel_flag: threading.Event | None = None,
-        timeout: float = 600,
+        idle_timeout: float = TELEGRAM_DOWNLOAD_IDLE_TIMEOUT,
     ) -> str | None:
+        """Download media, waiting as long as progress is being made.
+
+        Instead of a hard wall-clock deadline (which aborts slow downloads such
+        as multi-gigabyte files mid-transfer), this waits indefinitely but
+        aborts with ``None`` if no progress is reported for ``idle_timeout``
+        seconds, or when ``cancel_flag`` is set.
+        """
         if not self.is_connected:
             return None
+
+        loop = self._ensure_loop()
+        last_activity = time.monotonic()
+
+        def _track_progress(current: int, total: int) -> None:
+            nonlocal last_activity
+            last_activity = time.monotonic()
+            if progress_callback:
+                progress_callback(current, total)
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._download_media_async(message, output_path, _track_progress, cancel_flag),
+            loop,
+        )
+
         try:
-            return self._run_sync(
-                self._download_media_async(message, output_path, progress_callback, cancel_flag),
-                timeout=timeout,
-            )
+            while True:
+                try:
+                    return future.result(timeout=2.0)
+                except TimeoutError:
+                    pass
+                if cancel_flag is not None and cancel_flag.is_set():
+                    # Let the async download observe the flag and unwind.
+                    continue
+                if time.monotonic() - last_activity > idle_timeout:
+                    logger.warning(
+                        "Telegram download stalled (no progress for %.0fs), aborting",
+                        idle_timeout,
+                    )
+                    future.cancel()
+                    return None
         except Exception:
             logger.exception("Failed to download media from Telegram")
             return None

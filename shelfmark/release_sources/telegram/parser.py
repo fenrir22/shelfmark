@@ -194,7 +194,7 @@ def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResu
     """Parse a bot response into a list of results.
     
     Supports multiple bot formats:
-    - Book-list style: 📚 `ID`\nAuthor Title with dl:ID buttons
+    - Book-list: 📚 `ID`\nAuthor Title with dl:ID buttons
     - Generic: Text-based results with metadata
     """
     if not response.messages:
@@ -207,7 +207,7 @@ def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResu
         
         # Check if this is a book-list style response
         if "📚" in text and "`" in text:
-            parsed = _parse_book_list_response(message, response)
+            parsed = _parse_booklist_response(message, response)
             results.extend(parsed)
             continue
         
@@ -272,7 +272,7 @@ def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResu
     return results
 
 
-def _parse_book_list_response(message: Any, response: TelegramBotResponse) -> list[TelegramParsedResult]:
+def _parse_booklist_response(message: Any, response: TelegramBotResponse) -> list[TelegramParsedResult]:
     """Parse book-list format: 📚 `ID`\nAuthor Title"""
     import re
     

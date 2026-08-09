@@ -909,15 +909,36 @@ def theme_init_js() -> Response:
 
 @app.route("/logo.png")
 def logo() -> Response:
-    """Serve logo from built frontend assets."""
+    """Serve site logo, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("logo")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
     return send_from_directory(FRONTEND_DIST, "logo.png", mimetype="image/png")
 
 
 @app.route("/favicon.ico")
 @app.route("/favico<path:_>")
 def favicon(_: Any = None) -> Response:
-    """Serve favicon from built frontend assets."""
+    """Serve site favicon, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("favicon")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
     return send_from_directory(FRONTEND_DIST, "favicon.ico", mimetype="image/vnd.microsoft.icon")
+
+
+@app.route("/mascot.png")
+def mascot() -> Response:
+    """Serve the bottom-right mascot, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("mascot")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
+    return send_from_directory(FRONTEND_DIST, "mascot.png", mimetype="image/png")
 
 
 if _is_debug_enabled():

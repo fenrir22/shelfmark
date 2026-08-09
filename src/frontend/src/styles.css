@@ -233,6 +233,16 @@
   }
 }
 
+@keyframes mascot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 @keyframes wave {
   0% {
     background-position: 200% 0;

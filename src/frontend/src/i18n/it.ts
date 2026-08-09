@@ -97,6 +97,16 @@ export const it = {
   'shelfmark_logo': 'Logo Shelfmark',
   'reset_search': 'Reimposta ricerca',
   'logo': 'Logo',
+  'site_logo': 'Logo del sito',
+  'site_logo_description':
+    'Mostrato accanto alla barra di ricerca. PNG, JPEG, WebP, GIF, ICO o AVIF (max 2 MB).',
+  'site_favicon': 'Favicon',
+  'site_favicon_description':
+    'Icona mostrata nella scheda del browser. PNG, JPEG, WebP, GIF, ICO o AVIF (max 2 MB).',
+  'site_mascot': 'Mascotte',
+  'site_mascot_description':
+    'Immagine decorativa in basso a destra. PNG, JPEG, WebP, GIF, ICO o AVIF (max 2 MB).',
+  'choose_image': 'Scegli immagine...',
 
   // Search
   'search_books_audiobooks': 'Cerca Libri e Audiolibri',

@@ -6,8 +6,8 @@ import { ActivitySidebar } from './components/activity';
 import { AdvancedFilters } from './components/AdvancedFilters';
 import { ConfigSetupBanner } from './components/ConfigSetupBanner';
 import { DetailsModal } from './components/DetailsModal';
-import { Footer } from './components/Footer';
 import { Header } from './components/Header';
+import { Mascot } from './components/Mascot';
 import { MetadataConfigSession } from './components/MetadataConfigSession';
 import { OnBehalfConfirmationModal } from './components/OnBehalfConfirmationModal';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -42,6 +42,7 @@ import { primeSettingsCache } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
 import { useUrlSearch } from './hooks/useUrlSearch';
 import { primeUsersCache } from './hooks/useUsersFetch';
+import { t } from './i18n';
 import { LoginPage } from './pages/LoginPage';
 import {
   getSourceRecordInfo,
@@ -107,8 +108,6 @@ import {
   applyDirectPolicyModeToButtonState,
   applyUniversalPolicyModeToButtonState,
 } from './utils/requestPolicyUi';
-
-import { t } from './i18n';
 
 // eslint-disable-next-line import/no-unassigned-import -- global app stylesheet is loaded for side effects
 import './styles.css';
@@ -197,8 +196,7 @@ const getSubmissionSuccessMessage = (
   return t('download_queued_and_request_submitted');
 };
 
-const CONFIRMED_DOWNLOAD_INTERRUPTED_MESSAGE =
-  t('download_queued_proxy_interrupted');
+const CONFIRMED_DOWNLOAD_INTERRUPTED_MESSAGE = t('download_queued_proxy_interrupted');
 
 type CombinedSelectionState = {
   phase: 'ebook' | 'audiobook';
@@ -2656,15 +2654,10 @@ function App() {
             />
           )}
         </main>
-
-        <div className={usePinnedMainScrollContainer ? 'mt-auto' : undefined}>
-          <Footer
-            buildVersion={config?.build_version}
-            releaseVersion={config?.release_version}
-            debug={config?.debug}
-          />
-        </div>
       </div>
+
+      {/* Mascot - fixed bottom-right decoration */}
+      <Mascot />
 
       <ActivitySidebar
         isOpen={downloadsSidebarOpen}
