@@ -3,18 +3,20 @@
 import random
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import requests
 
 from shelfmark.bypass import BypassCancelledError
+from shelfmark.bypass.cookie_store import store_extracted_cookies
 from shelfmark.core.config import config
 from shelfmark.core.logger import setup_logger
 from shelfmark.core.utils import normalize_http_url
 from shelfmark.download.network import get_ssl_verify
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from threading import Event
 
     from shelfmark.download import network
@@ -120,6 +122,47 @@ def _coerce_timeout_ms(value: object, default: int) -> int:
     return default
 
 
+def max_duration_seconds() -> float:
+    """Upper bound on how long get_bypassed_page() can take for one URL.
+
+    MAX_RETRY attempts at the configured read timeout, plus the exponential backoff waited
+    between them (jitter is < 1s per gap, counted as a full second to stay conservative).
+    Callers use this to declare a stall-detection grace; see shelfmark.download.activity.
+    """
+    bypasser_timeout = _coerce_timeout_ms(config.get("EXT_BYPASSER_TIMEOUT", 60000), 60000)
+    read_timeout = min((bypasser_timeout / 1000) + READ_TIMEOUT_BUFFER, MAX_READ_TIMEOUT)
+    backoff_total = sum(
+        min(BACKOFF_CAP, BACKOFF_BASE * (2 ** (attempt - 1))) + 1.0
+        for attempt in range(1, MAX_RETRY)
+    )
+    return MAX_RETRY * read_timeout + backoff_total
+
+
+def _store_solution_clearance(target_url: str, solution: Mapping[str, Any]) -> None:
+    """Keep the clearance the solver won, so later requests do not re-solve.
+
+    A solve is the expensive part of an external bypass - tens of seconds of real
+    browser - and FlareSolverr-compatible services hand back the cookies and the
+    User-Agent that earned it. Dropping them meant every single request paid a 403
+    plus a full solve, and a file download (which the solver cannot proxy, being
+    binary) never presented clearance at all.
+
+    The UA matters as much as the cookies: Cloudflare ties cf_clearance to the UA
+    that solved the challenge, so replaying the cookie under our own UA is rejected.
+    """
+    cookies = solution.get("cookies") or []
+    if not isinstance(cookies, list):
+        logger.debug("External bypasser returned no usable cookie list for '%s'", target_url)
+        return
+
+    user_agent = solution.get("userAgent")
+    store_extracted_cookies(
+        url=target_url,
+        cookies=cookies,
+        user_agent=user_agent if isinstance(user_agent, str) else None,
+    )
+
+
 def _fetch_via_bypasser(target_url: str) -> str | None:
     """Make a single request to the external bypasser service. Returns HTML or None."""
     raw_bypasser_url = _coerce_config_str(
@@ -173,11 +216,14 @@ def _fetch_via_bypasser(target_url: str) -> str | None:
             logger.warning("External bypasser returned empty response for '%s'", target_url)
             return None
 
-        # Extract and store cookies and user agent from FlareSolverr response
-        if solution:
-            cookies = solution.get("cookies", [])
-            user_agent = solution.get("userAgent")
-            _store_cookies_from_flaresolverr(target_url, cookies, user_agent)
+        try:
+            _store_solution_clearance(target_url, solution)
+        except AttributeError, KeyError, TypeError, ValueError:
+            # Storing clearance is an optimisation; the page is the product. The
+            # solution JSON comes from a service we do not control, so a surprise in
+            # its cookie shape must not discard HTML that already cost a ~30s solve
+            # and send the caller round for up to MAX_RETRY more of them.
+            logger.debug("Could not store bypass clearance for '%s'", target_url, exc_info=True)
 
     except requests.exceptions.Timeout:
         logger.warning(

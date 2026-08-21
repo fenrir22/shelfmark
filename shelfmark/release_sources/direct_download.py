@@ -539,6 +539,98 @@ class SearchUnavailableError(SourceUnavailableError):
     """Raised when Anna's Archive cannot be reached via any mirror/DNS."""
 
 
+# Markers that prove a 200 really came from Anna's Archive, and markers that mean we
+# are looking at a protection interstitial rather than the site. A page with neither
+# is a domain that answers but is not AA - seized, parked or for sale.
+#
+# Deliberately structural rather than the domain name: a parking page's whole job is
+# to display the domain it is squatting on, so "annas-archive" matches the very pages
+# this is meant to catch. These paths only exist on the real site.
+_AA_PAGE_MARKERS = (
+    "/md5/",
+    "aarecord",
+    "anna's archive",
+    "/dyn/",
+    "/datasets",
+    "/fast_download",
+    "/slow_download",
+)
+_CHALLENGE_MARKERS = (
+    "ddos-guard",
+    "just a moment",
+    "cloudflare",
+    "checking your browser",
+    "cf-browser-verification",
+)
+
+
+def _looks_like_aa_page(html: str) -> bool:
+    """Whether ``html`` is recognisably Anna's Archive itself."""
+    lowered = html.lower()
+    return any(marker in lowered for marker in _AA_PAGE_MARKERS)
+
+
+def _looks_like_challenge_page(html: str) -> bool:
+    """Whether ``html`` is a protection interstitial rather than the site behind it."""
+    lowered = html.lower()
+    return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+
+
+def _fetch_search_table(url: str, selector: network.AAMirrorSelector) -> tuple[str, Tag | None]:
+    """Fetch the AA search page, retrying past mirrors that are not actually AA.
+
+    A parked or seized domain answers 200 with a page that has no results table and no
+    "No files found." - indistinguishable from a broken search unless we check whether
+    the response looks like AA at all. Those mirrors are quarantined for the session so
+    later searches skip them instead of paying the timeout again.
+    """
+    attempt_url = url
+    for _ in range(len(network.get_available_aa_urls()) or 1):
+        response = downloader.html_get_page(
+            attempt_url, selector=selector, allow_bypasser_fallback=True
+        )
+        if not response:
+            # Network/mirror exhaustion path bubbles up so API can notify clients
+            msg = "Unable to reach download source. Network restricted or mirrors are blocked."
+            raise SearchUnavailableError(msg)
+
+        html = _html_response_text(response)
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table")
+        if isinstance(table, Tag):
+            return html, table
+        if table is not None:
+            msg = f"Expected results table tag, got {type(table).__name__}"
+            raise TypeError(msg)
+        if "No files found." in html:
+            # A real, genuinely empty answer from a healthy mirror.
+            return html, None
+        if _looks_like_challenge_page(html):
+            # The bypass did not actually clear the protection - the interstitial is
+            # what came back. Rotating is pointless (every mirror shares the same
+            # protection) and reporting it as an empty result is worse: the user is
+            # told their query found nothing when the search never ran.
+            msg = (
+                "Anna's Archive answered with an unsolved protection challenge. "
+                "Check that the bypasser is reachable and working."
+            )
+            raise SearchUnavailableError(msg)
+        if _looks_like_aa_page(html):
+            # A real AA response in a shape the caller should report as drift.
+            # Not the mirror's fault.
+            return html, None
+
+        new_base, action = selector.next_mirror_or_rotate_dns(
+            fatal=True, reason="responded without an Anna's Archive page"
+        )
+        if action not in ("mirror", "dns") or not new_base:
+            return html, None
+        attempt_url = selector.rewrite(url)
+        logger.info("Retrying search on %s", new_base)
+
+    return "", None
+
+
 def search_books(query: str, filters: SearchFilters) -> list[BrowseRecord]:
     """Search for books matching the query.
 
@@ -601,15 +693,9 @@ def search_books(query: str, filters: SearchFilters) -> list[BrowseRecord]:
         f"{filters_query}"
     )
 
-    html = downloader.html_get_page(url, selector=selector, allow_bypasser_fallback=False)
-    if not html:
-        # Network/mirror exhaustion path bubbles up so API can notify clients
-        msg = "Unable to reach download source. Network restricted or mirrors are blocked."
-        raise SearchUnavailableError(msg)
-
-    soup = BeautifulSoup(_html_response_text(html), "html.parser")
-    tbody = soup.find("table")
-
+    # AA gates /search behind a DDoS-Guard JS challenge, which every mirror shares. Rotating
+    # to another mirror only collects another 403, so let the bypasser solve it.
+    html, tbody = _fetch_search_table(url, selector)
     if tbody is None:
         if "No files found." in html:
             logger.info("No books found for query: %s", query)
@@ -657,7 +743,8 @@ def get_book_info(book_id: str, *, fetch_download_count: bool = True) -> BrowseR
     """
     url = f"{network.get_aa_base_url()}/md5/{book_id}"
     selector = network.AAMirrorSelector()
-    html = downloader.html_get_page(url, selector=selector, allow_bypasser_fallback=False)
+    # Same challenge as search: the detail page is gated on every mirror, so bypass it.
+    html = downloader.html_get_page(url, selector=selector, allow_bypasser_fallback=True)
 
     if not html:
         msg = "Unable to reach download source. Network restricted or mirrors are blocked."
@@ -885,6 +972,9 @@ def _parse_book_info_page(
     if fetch_download_count:
         try:
             summary_url = f"{network.get_aa_base_url()}/dyn/md5/summary/{book_id}"
+            # Unlike search and the detail page above, this one stays off the bypasser: a
+            # download count is decoration on the details modal, not worth holding the
+            # modal open for a browser solve. If it is gated, drop it and move on.
             summary_response = downloader.html_get_page(
                 summary_url, selector=network.AAMirrorSelector(), allow_bypasser_fallback=False
             )

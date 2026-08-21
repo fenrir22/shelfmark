@@ -27,6 +27,7 @@ class _DummySelector:
         self._index = 0
         self.current_base = bases[0]
         self.attempts_this_dns = 0
+        self.quarantined: list[tuple[str, str]] = []
 
     def rewrite(self, url: str) -> str:
         for base in self._bases:
@@ -34,7 +35,11 @@ class _DummySelector:
                 return url.replace(base, self.current_base, 1)
         return url
 
-    def next_mirror_or_rotate_dns(self, allow_dns: bool = True) -> tuple[str | None, str]:
+    def next_mirror_or_rotate_dns(
+        self, allow_dns: bool = True, *, fatal: bool = False, reason: str = ""
+    ) -> tuple[str | None, str]:
+        if fatal:
+            self.quarantined.append((self.current_base, reason))
         self.attempts_this_dns += 1
         self._index = (self._index + 1) % len(self._bases)
         self.current_base = self._bases[self._index]
@@ -149,3 +154,50 @@ def test_html_get_page_locked_aa_does_not_fail_over_on_cross_host_redirect(monke
 
     assert html == ""
     assert calls == ["https://annas-archive.li/search?q=test"]
+
+
+def test_html_get_page_echoes_cookies_across_same_host_redirects(monkeypatch):
+    """DDoS-Guard's ?check=1 probe is cleared by echoing the Set-Cookie it issues.
+
+    Without this the __ddg* cookie is dropped on every hop, the server re-issues the same
+    redirect, and the request dies with TooManyRedirects.
+    """
+    import shelfmark.download.http as http
+
+    monkeypatch.setattr(http, "_is_cf_bypass_enabled", lambda: False)
+    monkeypatch.setattr(http, "get_proxies", lambda _url: {})
+    monkeypatch.setattr(http.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(http.network, "get_aa_base_url", lambda: "https://annas-archive.li")
+    monkeypatch.setattr(http.network, "is_aa_auto_mode", lambda: True)
+
+    sent_cookies: list[dict[str, str]] = []
+
+    def fake_get(url: str, **kwargs):
+        sent_cookies.append(dict(kwargs["cookies"]))
+        if url == "https://annas-archive.li/search?q=test":
+            response = _FakeResponse(302, headers={"Location": "/search?q=test&check=1"}, url=url)
+            response.cookies = {"__ddg2_": "probe"}
+            return response
+        if url == "https://annas-archive.li/search?q=test&check=1":
+            # The probe only clears if the cookie comes back on this hop.
+            if kwargs["cookies"].get("__ddg2_") != "probe":
+                response = _FakeResponse(
+                    302, headers={"Location": "/search?q=test&check=1"}, url=url
+                )
+                response.cookies = {"__ddg2_": "probe"}
+                return response
+            return _FakeResponse(200, text="RESULTS", url=url)
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(http.requests, "get", fake_get)
+
+    selector = _DummySelector(["https://annas-archive.li"])
+    html = http.html_get_page(
+        "https://annas-archive.li/search?q=test",
+        selector=selector,
+        retry=1,
+        allow_bypasser_fallback=False,
+    )
+
+    assert html == "RESULTS"
+    assert sent_cookies == [{}, {"__ddg2_": "probe"}]

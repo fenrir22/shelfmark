@@ -14,6 +14,7 @@ from shelfmark.config.download_settings_handlers import (
     check_books_destination,
 )
 from shelfmark.config.email_settings import check_email_connection
+from shelfmark.config.migrations import migrate_audiobook_formats
 from shelfmark.core.languages import supported_book_languages
 from shelfmark.core.logger import setup_logger
 from shelfmark.core.settings_registry import (
@@ -35,6 +36,7 @@ from shelfmark.core.settings_registry import (
     register_on_save,
     register_settings,
 )
+from shelfmark.core.utils import ARCHIVE_FORMATS, AUDIOBOOK_FORMATS
 
 _DOWNLOAD_CLIENT_COMPLETED_PATH_TIMEOUT_DEFAULT = 60
 _DOWNLOAD_CLIENT_COMPLETED_PATH_TIMEOUT_MAX = 3600
@@ -134,6 +136,20 @@ def _on_save_advanced(values: dict[str, Any]) -> dict[str, Any]:
 
 
 logger = setup_logger(__name__)
+
+
+def migrate_audiobook_format_settings() -> None:
+    """Bring installs created before the audiobook format sets were unified up to date."""
+    from shelfmark.core.settings_registry import load_config_file, save_config_file
+
+    migrate_audiobook_formats(
+        load_general_config=lambda: load_config_file("general"),
+        save_general_config=lambda values: save_config_file("general", values),
+        widened_formats=[*AUDIOBOOK_FORMATS, *ARCHIVE_FORMATS],
+        logger=logger,
+    )
+
+
 _SMTP_PORT_MAX = 65535
 _EMAIL_ATTACHMENT_LIMIT_MB_MAX = 600
 
@@ -215,11 +231,7 @@ _FORMAT_OPTIONS = [
 ]
 
 _AUDIOBOOK_FORMAT_OPTIONS = [
-    {"value": "m4b", "label": "M4B"},
-    {"value": "mp3", "label": "MP3"},
-    {"value": "m4a", "label": "M4A"},
-    {"value": "zip", "label": "ZIP"},
-    {"value": "rar", "label": "RAR"},
+    {"value": fmt, "label": fmt.upper()} for fmt in (*AUDIOBOOK_FORMATS, *ARCHIVE_FORMATS)
 ]
 
 _DOWNLOAD_TO_BROWSER_CONTENT_TYPE_OPTIONS = [
@@ -423,7 +435,7 @@ def general_settings() -> list[SettingsField]:
             label="Supported Audiobook Formats",
             description="Audiobook formats to include in search results. ZIP/RAR archives are extracted automatically and audiobook files are used if found.",
             options=_AUDIOBOOK_FORMAT_OPTIONS,
-            default=["m4b", "mp3"],
+            default=[*AUDIOBOOK_FORMATS, *ARCHIVE_FORMATS],
         ),
         MultiSelectField(
             key="BOOK_LANGUAGE",
@@ -761,7 +773,10 @@ def _on_save_downloads(values: dict[str, Any]) -> dict[str, Any]:
             }
 
     # Audiobooks are always folder output.
-    if effective.get("FILE_ORGANIZATION_AUDIOBOOK", "rename") == "rename":
+    if effective.get("FILE_ORGANIZATION_AUDIOBOOK", "rename") in {
+        "rename",
+        "rename_and_group",
+    }:
         template = effective.get("TEMPLATE_AUDIOBOOK_RENAME", "")
         if _contains_path_separators(template):
             return {
@@ -1289,6 +1304,11 @@ def download_settings() -> list[SettingsField]:
                     "label": "Rename and Organize",
                     "description": "Create folders and rename files using a template. Recommended for Audiobookshelf. Do not use with ingest folders.",
                 },
+                {
+                    "value": "rename_and_group",
+                    "label": "Rename and Group",
+                    "description": "Rename single-file downloads; keep multi-file downloads grouped in their source folder. Do not use with ingest folders.",
+                },
             ],
             default="rename",
             universal_only=True,
@@ -1307,7 +1327,10 @@ def download_settings() -> list[SettingsField]:
             ),
             default="{Author} - {Title}",
             placeholder="{Author} - {Title}{ - Part }{PartNumber}",
-            show_when={"field": "FILE_ORGANIZATION_AUDIOBOOK", "value": "rename"},
+            show_when={
+                "field": "FILE_ORGANIZATION_AUDIOBOOK",
+                "value": ["rename", "rename_and_group"],
+            },
             universal_only=True,
         ),
         # Organize mode template - folders allowed
@@ -1650,6 +1673,19 @@ def cloudflare_bypass_settings() -> list[SettingsField]:
             requires_restart=True,
             show_when={"field": "USING_EXTERNAL_BYPASSER", "value": True},
         ),
+        NumberField(
+            key="BYPASS_BROWSER_IDLE_TIMEOUT",
+            label="Bypasser Idle Timeout (seconds)",
+            description=(
+                "How long the bypass helper process may sit unused before it is shut down. "
+                "Higher keeps more searches fast, lower frees memory sooner."
+            ),
+            default=180,
+            min_value=30,
+            max_value=3600,
+            requires_restart=True,
+            show_when={"field": "USING_EXTERNAL_BYPASSER", "value": False},
+        ),
     ]
 
 
@@ -1766,6 +1802,23 @@ def advanced_settings() -> list[SettingsField]:
             label="Debug Mode",
             description="Enable verbose logging to console and file. Not recommended for normal use.",
             default=False,
+            requires_restart=True,
+        ),
+        SelectField(
+            key="LOG_LEVEL",
+            label="Log Level",
+            description=(
+                "Lowest severity written to the console and log file. "
+                "Ignored while Debug Mode is on, which forces Debug."
+            ),
+            options=[
+                {"value": "DEBUG", "label": "Debug", "description": "Everything, very noisy."},
+                {"value": "INFO", "label": "Info", "description": "Normal activity (default)."},
+                {"value": "WARNING", "label": "Warning", "description": "Warnings and problems."},
+                {"value": "ERROR", "label": "Error", "description": "Failures only."},
+                {"value": "CRITICAL", "label": "Critical", "description": "Fatal errors only."},
+            ],
+            default="INFO",
             requires_restart=True,
         ),
         NumberField(

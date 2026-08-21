@@ -3,7 +3,7 @@
 <img src="src/frontend/public/logo.png" alt="Shelfmark" width="200">
 
 > [!NOTE]
-> This project is in a stable state as of May 2026 but is not under active maintenance. 
+> Shelfmark is feature stable and maintained on a best-effort basis. Bug fixes, security updates, and small quality-of-life improvements are still shipped, and pull requests are reviewed — including new features. There is no roadmap for new features for now.
 
 Shelfmark is a self-hosted web interface for searching and requesting books and audiobooks across multiple sources. Bring your own sources, metadata providers, and download clients to build a single hub for your digital library. Supports multiple users with a built-in request system, so you can share your instance with others and let them browse and request books on their own.
 
@@ -44,6 +44,7 @@ Works great alongside the following library tools, with support for automatic im
 ### Prerequisites
 
 - Docker & Docker Compose
+- At least 2 GB of RAM available to the container when using the standard image — see [Memory Requirements](#memory-requirements)
 
 ### Installation
 
@@ -94,6 +95,30 @@ volumes:
 - Aggregates releases from multiple configured sources
 - Full audiobook support
 
+### Hardcover API Key
+
+Hardcover powers metadata search in Universal mode. Create a token at
+[hardcover.app/account/api](https://hardcover.app/account/api) — current keys start with `hc_pat_`
+and are far shorter than the JWTs Hardcover issued before August 2026.
+
+Tick these seven scopes on the token screen:
+
+| Scope | Used for |
+|-------|----------|
+| `read:catalog` | Metadata search, plus book, edition, author and series lookups |
+| `read:library` | Your reading status and shelf counts |
+| `read:lists` | Your lists and the books on them |
+| `read:me:content` | Test Connection and the "Connected as" label |
+| `read:users` | Usernames shown alongside lists |
+| `write:library` | Setting a book's reading status from Shelfmark |
+| `write:lists` | Adding and removing books from lists, including auto-remove on download |
+
+The two `write:` scopes matter only if you set reading status from Shelfmark or leave
+**Auto-Remove from List on Download** enabled (it is on by default) — without them those actions
+fail silently. Everything else Hardcover offers (journal, goals, reviews, prompts, notifications,
+account) can stay unticked. The `all` scope works too, but it grants full account access including
+deletion, so prefer the list above.
+
 ### Environment Variables
 
 Environment variables work for initial setup and Docker deployments. They serve as defaults that can be overridden in the web interface.
@@ -122,7 +147,7 @@ See the full [Environment Variables Reference](docs/environment-variables.md) fo
 Some of the additional options available in Settings:
 - **Prowlarr** - Configure indexers and download clients to download books and audiobooks
 - **Additional audiobook sources** - Configure additional sources for audiobook discovery
-- **IRC** - Add details for IRC book sources and download directly from the UI
+- **IRC** - Add details for IRC book sources and download directly from the UI. Most networks serve audiobooks from the same channel as ebooks (on `irc.irchighway.net` that's `#ebooks`, while `#bookz` is effectively inactive), so leave the separate audiobook channel blank unless your network actually indexes one. IRC audiobooks usually arrive as ZIP/RAR archives — keep those enabled under Supported Audiobook Formats or the releases are filtered out of results
 - **Library Link** - Add a link to your Calibre-Web or Grimmory instance in the UI header
 - **File processing** - Customiseable download paths, file renaming and directory creation with template-based renaming
 - **Network Settings** - Custom proxy support (SOCKS5 + HTTP/S) and configurable DNS
@@ -137,6 +162,17 @@ docker compose up -d
 ```
 
 The full-featured image with all network capabilities included.
+
+#### Memory Requirements
+
+The standard image ships a real Chromium browser, which it launches to solve Cloudflare challenges for Direct Download. Chromium needs room to run:
+
+- **2 GB of RAM available to the container** is a safe minimum; 1 GB or less is where problems usually start
+- Only relevant if you use Direct Download. Prowlarr, IRC and audiobook sources don't start the browser
+
+When the container is starved of memory, Chromium fails to start and every Direct Download fails with unrelated-looking errors — repeated `403 detected; switching to bypasser` followed by `No download URL found`, and downloads that never complete. If you're seeing that, check the container's memory limit and the host's free memory before suspecting your ISP or DNS.
+
+If you can't spare the memory, use the [Lite](#lite) image with an external resolver (e.g. FlareSolverr) running elsewhere.
 
 #### Tor Routing
 Optional Tor support for network privacy:
@@ -175,6 +211,7 @@ A lighter image without the built-in browser automation. Ideal for:
 - **External services** - Already running FlareSolverr or similar for other applications
 - **Alternative sources** - Using Prowlarr, IRC, or other configured sources
 - **Audiobooks** - Using Shelfmark primarily for audiobooks
+- **Constrained hosts** - No bundled browser, so it runs comfortably below the standard image's [memory requirements](#memory-requirements)
 
 ```bash
 curl -O https://raw.githubusercontent.com/calibrain/shelfmark/main/compose/docker-compose.lite.yml
@@ -225,9 +262,11 @@ These are non-goals, not missing features.
 
 ## Contributing
 
-Shelfmark's core feature set is complete. Development focuses on stability, bug fixes, quality-of-life improvements, and refining the search experience. Contributions in these areas are welcome, please file issues or submit pull requests on GitHub.
+Shelfmark's core feature set is complete.
 
-Feature requests that fall outside the project scope (library integration, automation, collection management) will be closed. If you're unsure whether something fits, open a discussion first.
+Pull requests are welcome and all of them get reviewed, new features included. If you want a feature, the fastest path is to send a PR for it rather than to file a request.
+
+Feature requests that fall outside the project scope (library integration, automation, collection management) will be closed, and PRs implementing them won't be merged. If you're unsure whether something fits, open a discussion first.
 
 ## Health Monitoring
 
@@ -247,7 +286,10 @@ Logs are available via:
 - `docker logs <container-name>`
 - `/var/log/shelfmark/` inside the container (when `ENABLE_LOGGING=true`)
 
-Log level is configurable via Settings or `LOG_LEVEL` environment variable.
+Log level is configurable under Settings → Advanced or via the `LOG_LEVEL` environment
+variable (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; case-insensitive, defaults to
+`INFO`). The environment variable wins over the setting, and `DEBUG=true` forces `DEBUG`
+regardless of either. Changes take effect on restart.
 
 ## Development
 

@@ -38,7 +38,10 @@ from shelfmark.config.env import (
     string_to_bool,
 )
 from shelfmark.config.security import _migrate_security_settings
-from shelfmark.config.settings import _SUPPORTED_BOOK_LANGUAGE
+from shelfmark.config.settings import (
+    _SUPPORTED_BOOK_LANGUAGE,
+    migrate_audiobook_format_settings,
+)
 from shelfmark.core.activity_view_state_service import ActivityViewStateService
 from shelfmark.core.auth_modes import (
     get_auth_check_admin_status,
@@ -80,8 +83,9 @@ from shelfmark.core.requests_service import (
     sync_delivery_states_from_queue_status,
 )
 from shelfmark.core.user_db import UserDB
-from shelfmark.core.utils import normalize_base_path
+from shelfmark.core.utils import AUDIOBOOK_FORMATS, normalize_base_path
 from shelfmark.download import orchestrator as backend
+from shelfmark.download import warmup
 from shelfmark.release_sources import (
     BrowseRecord,
     Release,
@@ -118,7 +122,7 @@ BASE_PATH = normalize_base_path(normalize_optional_text(app_config.get("URL_BASE
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # Disable caching
 app.config["APPLICATION_ROOT"] = BASE_PATH or "/"
-wsgi_app = cast(Any, ProxyFix(app.wsgi_app))
+wsgi_app = cast(Any, ProxyFix(app.wsgi_app, x_host=1, x_port=1))
 if BASE_PATH:
     wsgi_app = cast(Any, PrefixMiddleware(wsgi_app, BASE_PATH, bypass_paths={"/api/health"}))
 app.wsgi_app = wsgi_app
@@ -191,6 +195,9 @@ except Exception as e:
 # Migrate legacy security settings if needed
 _migrate_security_settings()
 
+# Widen audiobook formats for installs that still carry the old m4b/mp3-only default
+migrate_audiobook_format_settings()
+
 # Initialize user database and register multi-user routes
 # If CONFIG_DIR doesn't exist or is read-only, multi-user features will be disabled
 _user_db_path = str(Path(os.environ.get("CONFIG_DIR", "/config")) / "users.db")
@@ -222,6 +229,10 @@ except (sqlite3.OperationalError, OSError) as e:
 
 # Start download coordinator
 backend.start()
+
+# Pre-solve the direct-download source's protection challenge in the background so the
+# first user search does not pay for a cold Chrome bypass. Never blocks startup.
+warmup.start()
 
 # Rate limiting for login attempts
 # Map usernames to their failed-attempt counters and lockout timestamps.
@@ -342,19 +353,7 @@ def get_auth_mode() -> str:
 
 
 _AUDIOBOOK_CATEGORY_RANGE = (3030, 3049)
-_AUDIOBOOK_FORMAT_HINTS = frozenset(
-    {
-        "m4b",
-        "mp3",
-        "m4a",
-        "flac",
-        "ogg",
-        "wma",
-        "aac",
-        "wav",
-        "opus",
-    }
-)
+_AUDIOBOOK_FORMAT_HINTS = frozenset(AUDIOBOOK_FORMATS)
 
 
 def _contains_audiobook_format_hint(value: Any) -> bool:
