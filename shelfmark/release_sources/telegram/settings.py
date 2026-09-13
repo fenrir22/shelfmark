@@ -22,7 +22,10 @@ def _test_connection(current_values: dict[str, Any] | None = None) -> dict[str, 
     from .client import client_manager
 
     if not client_manager.is_connected:
-        return {"success": False, "message": "Telegram client is not connected. Please authenticate first."}
+        return {
+            "success": False,
+            "message": "Telegram client is not connected. Please authenticate first.",
+        }
 
     return client_manager.test_connection()
 
@@ -46,7 +49,7 @@ def _start_authentication(current_values: dict[str, Any] | None = None) -> dict[
 
     try:
         api_id = int(str(api_id_raw).strip())
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return {"success": False, "message": "API ID must be a valid number."}
 
     api_hash = str(api_hash).strip()
@@ -57,10 +60,13 @@ def _start_authentication(current_values: dict[str, Any] | None = None) -> dict[
     session_path = str(env.CONFIG_DIR / "telegram_session")
 
     connected = client_manager.connect(api_id, api_hash, session_path)
-    
+
     if not connected and client_manager.status == "error":
-        return {"success": False, "message": "Failed to connect to Telegram. Check your API credentials."}
-    
+        return {
+            "success": False,
+            "message": "Failed to connect to Telegram. Check your API credentials.",
+        }
+
     if not connected and client_manager.status != "auth_required":
         return {"success": False, "message": "Failed to connect to Telegram."}
 

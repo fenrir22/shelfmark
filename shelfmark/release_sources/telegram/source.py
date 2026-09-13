@@ -163,7 +163,9 @@ class TelegramSource(ReleaseSource):
 
         # Telegram fornisce solo audiolibri
         if content_type != "audiobook":
-            logger.debug("Telegram source only supports audiobooks, skipping %s search", content_type)
+            logger.debug(
+                "Telegram source only supports audiobooks, skipping %s search", content_type
+            )
             return []
 
         query = plan.primary_query or self._build_query(book)
@@ -201,7 +203,7 @@ class TelegramSource(ReleaseSource):
                 _emit_status("Failed to send search query", phase="error")
                 logger.error("Failed to send message to bot")
                 return []
-            
+
             logger.info("Message sent to bot, ID: %s, waiting for response...", sent_message.id)
 
             response_timeout = _config_int("TELEGRAM_RESPONSE_TIMEOUT", 60)
@@ -323,28 +325,28 @@ class TelegramSource(ReleaseSource):
         timeout: float = 60.0,
     ) -> dict[str, Any] | None:
         """Click a callback button and wait for the document.
-        
+
         Returns dict with document info (message_id, chat_id, document_id, file_name, size_bytes)
         or None if failed.
         """
         if not self.is_available():
             logger.warning("Telegram source not available for download")
             return None
-        
+
         bot_username = _config_text("TELEGRAM_BOT_USERNAME")
-        
+
         try:
             bot_entity = client_manager.resolve_bot_entity(bot_username)
             if bot_entity is None:
                 logger.warning("Could not resolve bot entity: %s", bot_username)
                 return None
-            
+
             # Get the message with the inline keyboard
             message = client_manager.get_message(chat_id, message_id)
             if message is None:
                 logger.warning("Could not get message %s/%s", chat_id, message_id)
                 return None
-            
+
             # Find the button with matching callback data
             target_button = None
             if message.reply_markup:
@@ -358,20 +360,20 @@ class TelegramSource(ReleaseSource):
                             break
                     if target_button:
                         break
-            
+
             if target_button is None:
                 logger.warning("Could not find button with callback data: %s", callback_data)
                 return None
-            
+
             # Click the button directly using message.click()
             logger.info("Clicking callback button: %s", callback_data)
             try:
                 click_result = client_manager.click_message_button(message, target_button.data)
                 logger.info("Click result: %s", click_result)
-            except Exception as e:
+            except Exception:
                 logger.exception("Failed to click button")
                 return None
-            
+
             # Wait for the document message
             logger.info("Waiting for document from bot...")
             response = client_manager.wait_for_document(
@@ -379,11 +381,11 @@ class TelegramSource(ReleaseSource):
                 timeout=timeout,
                 after_message_id=message_id,
             )
-            
+
             if not response.messages:
                 logger.warning("No document received from bot")
                 return None
-            
+
             # Find the document in the response
             for msg in response.messages:
                 if msg.document:
@@ -392,21 +394,21 @@ class TelegramSource(ReleaseSource):
                     doc_info["chat_id"] = chat_id
                     doc_info["document_id"] = str(msg.document.id)
                     doc_info["size_bytes"] = getattr(msg.document, "size", None)
-                    
+
                     # Extract filename
                     for attr in msg.document.attributes:
                         if hasattr(attr, "file_name"):
                             doc_info["file_name"] = attr.file_name
                             break
-                    
+
                     logger.info("Document received: %s", doc_info.get("file_name"))
                     return doc_info
-            
+
             logger.warning("No document found in bot response")
-            return None
-            
         except Exception:
             logger.exception("Failed to download via callback")
+            return None
+        else:
             return None
 
     @staticmethod
@@ -555,7 +557,10 @@ class TelegramGroupSource(TelegramSource):
                 reply_to = link_topic_id
 
             messages = client_manager.search_messages(
-                group_entity, query, limit=search_limit, reply_to=reply_to,
+                group_entity,
+                query,
+                limit=search_limit,
+                reply_to=reply_to,
                 add_offset=add_offset,
             )
 
@@ -572,7 +577,9 @@ class TelegramGroupSource(TelegramSource):
         else:
             return releases
 
-    def _convert_messages_to_releases(self, messages: list, content_type: str = "manuale") -> list[Release]:
+    def _convert_messages_to_releases(
+        self, messages: list, content_type: str = "manuale"
+    ) -> list[Release]:
         releases = []
         for msg in messages:
             document = getattr(msg, "document", None)
@@ -585,7 +592,9 @@ class TelegramGroupSource(TelegramSource):
                     file_name = attr.file_name
                     break
 
-            title = str(Path(file_name).stem) if file_name else (getattr(msg, "text", "") or "Unknown")
+            title = (
+                str(Path(file_name).stem) if file_name else (getattr(msg, "text", "") or "Unknown")
+            )
             extension = Path(file_name).suffix.lstrip(".").lower() if file_name else None
 
             chat_id = getattr(msg, "chat_id", None)

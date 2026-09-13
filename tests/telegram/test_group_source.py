@@ -270,9 +270,9 @@ def test_search_falls_back_to_dialog_title(monkeypatch):
     monkeypatch.setattr(
         tg_source,
         "_config_text",
-        lambda key: "The Amber Room request and submissions"
-        if key == "TELEGRAM_GROUP_USERNAME"
-        else "",
+        lambda key: (
+            "The Amber Room request and submissions" if key == "TELEGRAM_GROUP_USERNAME" else ""
+        ),
     )
     monkeypatch.setattr(tg_source, "_config_int", lambda key, default=50: default)
     monkeypatch.setattr(tg_source, "get_cached_results", lambda *a, **k: None)

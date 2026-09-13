@@ -159,11 +159,12 @@ class TelegramClientManager:
             if connected:
                 self._start_heartbeat()
                 logger.info("Telegram client auto-reconnected as @%s", self._username)
-            return connected
         except Exception:
             logger.exception("Telegram auto-reconnect failed")
             self._status = "error"
             return False
+        else:
+            return connected
         finally:
             self._reconnect_lock.release()
 
@@ -176,7 +177,7 @@ class TelegramClientManager:
             try:
                 await self._client.get_me()
                 self._last_heartbeat = time.time()
-            except Exception:
+            except Exception:  # noqa: BLE001 - heartbeat must never kill the loop on a transient failure
                 logger.warning("Telegram heartbeat failed — connection lost")
                 self._connected = False
                 self._status = "disconnected"
@@ -206,7 +207,9 @@ class TelegramClientManager:
         if self._loop is not None and self._loop.is_running():
             return self._loop
 
-        self._thread = threading.Thread(target=self._start_loop, daemon=True, name="telegram-mtproto")
+        self._thread = threading.Thread(
+            target=self._start_loop, daemon=True, name="telegram-mtproto"
+        )
         self._thread.start()
 
         deadline = time.monotonic() + 10
@@ -257,7 +260,7 @@ class TelegramClientManager:
 
             self._status = "auth_required"
             logger.info("Telegram session requires authentication")
-        except (AuthKeyUnregisteredError, SessionPasswordNeededError):
+        except AuthKeyUnregisteredError, SessionPasswordNeededError:
             self._status = "auth_required"
             return False
         except Exception:
@@ -276,11 +279,12 @@ class TelegramClientManager:
             result = self._run_sync(self._connect_async(api_id, api_hash, session_path))
             if result:
                 self._start_heartbeat()
-            return result
         except Exception:
             logger.exception("Telegram connect failed")
             self._status = "error"
             return False
+        else:
+            return result
 
     async def _send_code_async(self, phone: str) -> dict[str, Any]:
         try:
@@ -476,9 +480,8 @@ class TelegramClientManager:
                 current_offset = batch[-1].id
             return self._filter_messages_local(results, query, limit)
         if add_offset > 0:
-            from telethon.tl.functions.messages import SearchRequest
-            from telethon.tl.types import InputPeerChannel, InputPeerChat, InputPeerUser
             from telethon import utils
+            from telethon.tl.functions.messages import SearchRequest
 
             peer = utils.get_input_peer(entity)
             request = SearchRequest(
@@ -521,9 +524,7 @@ class TelegramClientManager:
         return False
 
     def _filter_messages_local(self, messages: list, query: str, limit: int) -> list:
-        matched = [
-            m for m in messages if self._message_matches_query(m, query)
-        ]
+        matched = [m for m in messages if self._message_matches_query(m, query)]
         return matched[:limit]
 
     def search_messages(
@@ -629,54 +630,55 @@ class TelegramClientManager:
         import time
 
         response = TelegramBotResponse()
-        
+
         min_msg_id = 0
         if sent_message is not None:
             min_msg_id = getattr(sent_message, "id", 0)
             logger.debug("Waiting for response after message ID: %s", min_msg_id)
-        
+
         # Poll for new messages
         start_time = time.time()
         poll_count = 0
-        
+
         while time.time() - start_time < timeout:
             poll_count += 1
             messages = await self._client.get_messages(entity, limit=20)
-            
+
             if poll_count % 10 == 0:
                 logger.debug("Poll #%d: found %d messages", poll_count, len(messages))
-            
+
             for msg in messages:
                 # Skip our own messages
                 if msg.out:
                     continue
-                
+
                 # Skip messages with ID <= our sent message ID
                 if min_msg_id > 0 and msg.id <= min_msg_id:
                     continue
-                
+
                 logger.info("Found response message from bot: ID=%s, date=%s", msg.id, msg.date)
-                
+
                 # Found a response
                 response.messages.append(msg)
-                
+
                 # Collect text
                 if msg.text:
                     if response.raw_text:
                         response.raw_text += "\n"
                     response.raw_text += msg.text
-                
+
                 # Collect callback buttons
                 if msg.reply_markup and hasattr(msg.reply_markup, "rows"):
                     for row in msg.reply_markup.rows:
                         for btn in row.buttons:
                             from telethon.tl.types import KeyboardButtonCallback
+
                             if isinstance(btn, KeyboardButtonCallback):
                                 response.callback_buttons.append(btn)
-                
+
                 # If we got a response, wait a bit more for additional messages
                 await _asyncio.sleep(1.0)
-                
+
                 # Get any additional messages
                 more_messages = await self._client.get_messages(entity, limit=20)
                 for msg2 in more_messages:
@@ -690,13 +692,17 @@ class TelegramClientManager:
                             if response.raw_text:
                                 response.raw_text += "\n"
                             response.raw_text += msg2.text
-                
+
                 return response
-            
+
             # Use asyncio.sleep for async context
             await _asyncio.sleep(0.5)
-        
-        logger.warning("Polling timeout after %d polls (%.1fs), no response received", poll_count, time.time() - start_time)
+
+        logger.warning(
+            "Polling timeout after %d polls (%.1fs), no response received",
+            poll_count,
+            time.time() - start_time,
+        )
         return response
 
     def wait_for_response(
@@ -741,43 +747,45 @@ class TelegramClientManager:
         import time
 
         response = TelegramBotResponse()
-        
+
         # Poll for new messages with documents
         start_time = time.time()
         poll_count = 0
-        
+
         while time.time() - start_time < timeout:
             poll_count += 1
             messages = await self._client.get_messages(entity, limit=20)
-            
+
             if poll_count % 10 == 0:
                 logger.debug("Document poll #%d: found %d messages", poll_count, len(messages))
-            
+
             for msg in messages:
                 # Skip our own messages
                 if msg.out:
                     continue
-                
+
                 # Skip messages with ID <= after_message_id
                 if after_message_id > 0 and msg.id <= after_message_id:
                     continue
-                
+
                 # Check if this message has a document
                 if msg.document:
                     logger.info("Found document message: ID=%s, size=%s", msg.id, msg.document.size)
                     response.messages.append(msg)
                     return response
-                
+
                 # Also collect text messages (bot might send info before document)
                 if msg.text:
                     response.messages.append(msg)
                     if response.raw_text:
                         response.raw_text += "\n"
                     response.raw_text += msg.text
-            
+
             await _asyncio.sleep(0.5)
-        
-        logger.warning("Document polling timeout after %d polls (%.1fs)", poll_count, time.time() - start_time)
+
+        logger.warning(
+            "Document polling timeout after %d polls (%.1fs)", poll_count, time.time() - start_time
+        )
         return response
 
     def wait_for_document(
@@ -838,37 +846,38 @@ class TelegramClientManager:
         import asyncio as _asyncio
 
         response = TelegramBotResponse()
-        
+
         # Poll for new messages
         start_time = _asyncio.get_event_loop().time()
         while _asyncio.get_event_loop().time() - start_time < timeout:
             messages = await self._client.get_messages(entity, limit=20)
-            
+
             for msg in messages:
                 # Skip our own messages
                 if msg.out:
                     continue
-                
+
                 # Found a response
                 response.messages.append(msg)
-                
+
                 # Collect text
                 if msg.text:
                     if response.raw_text:
                         response.raw_text += "\n"
                     response.raw_text += msg.text
-                
+
                 # Collect callback buttons
                 if msg.reply_markup and hasattr(msg.reply_markup, "rows"):
                     for row in msg.reply_markup.rows:
                         for btn in row.buttons:
                             from telethon.tl.types import KeyboardButtonCallback
+
                             if isinstance(btn, KeyboardButtonCallback):
                                 response.callback_buttons.append(btn)
-                
+
                 # Wait a bit for additional messages
                 await _asyncio.sleep(1.0)
-                
+
                 # Get any additional messages
                 more_messages = await self._client.get_messages(entity, limit=20)
                 for msg2 in more_messages:
@@ -880,11 +889,11 @@ class TelegramClientManager:
                             if response.raw_text:
                                 response.raw_text += "\n"
                             response.raw_text += msg2.text
-                
+
                 return response
-            
+
             await _asyncio.sleep(0.5)
-        
+
         return response
 
     def wait_for_callback_response(

@@ -38,8 +38,18 @@ def get_supported_formats(content_type: str | None = None) -> list[str]:
 
 
 _MANUAL_FORMATS = [
-    "pdf", "epub", "mobi", "azw3", "fb2", "djvu", "cbz", "cbr",
-    "zip", "rar", "7z", "mod",
+    "pdf",
+    "epub",
+    "mobi",
+    "azw3",
+    "fb2",
+    "djvu",
+    "cbz",
+    "cbr",
+    "zip",
+    "rar",
+    "7z",
+    "mod",
 ]
 
 

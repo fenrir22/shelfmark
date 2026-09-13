@@ -173,25 +173,28 @@ except ImportError as e:
 
 # Auto-connect Telegram client if configured
 try:
-    from shelfmark.release_sources.telegram.client import client_manager
     from shelfmark.core.config import config
-    
+    from shelfmark.release_sources.telegram.client import client_manager
+
     if config.get("TELEGRAM_ENABLED", False):
         api_id = config.get("TELEGRAM_API_ID")
         api_hash = config.get("TELEGRAM_API_HASH")
-        
+
         if api_id and api_hash:
             from shelfmark.config import env
+
             session_path = str(env.CONFIG_DIR / "telegram_session")
-            
+
             logger.info("Auto-connecting Telegram client...")
             connected = client_manager.connect(int(api_id), api_hash, session_path)
-            
+
             if connected:
                 logger.info("Telegram client connected as @%s", client_manager.username)
             else:
-                logger.warning("Telegram client auto-connection failed (status: %s)", client_manager.status)
-except Exception as e:
+                logger.warning(
+                    "Telegram client auto-connection failed (status: %s)", client_manager.status
+                )
+except Exception as e:  # noqa: BLE001 - startup guardrail, must never break import
     logger.debug("Telegram auto-connection skipped: %s", e)
 
 # Migrate legacy security settings if needed
@@ -1162,10 +1165,7 @@ def api_config() -> Response | tuple[Response, int]:
         from shelfmark.release_sources.telegram.client import client_manager
 
         telegram_enabled = bool(app_config.get("TELEGRAM_ENABLED", False))
-        if telegram_enabled:
-            telegram_status = client_manager.status
-        else:
-            telegram_status = "disabled"
+        telegram_status = client_manager.status if telegram_enabled else "disabled"
 
         db_user_id = get_session_db_user_id(session)
 
@@ -2935,9 +2935,7 @@ def api_releases() -> Response | tuple[Response, int]:
                 search_kwargs = {"expand_search": expand_search, "content_type": content_type}
                 if source_name == "telegram_group" and offset_id:
                     search_kwargs["add_offset"] = offset_id
-                releases = source.search(
-                    search_book, plan, **search_kwargs
-                )
+                releases = source.search(search_book, plan, **search_kwargs)
             except ValueError:
                 return None, [], f"Unknown source: {source_name}"
             except (SourceUnavailableError, *_OPERATIONAL_ERRORS) as e:

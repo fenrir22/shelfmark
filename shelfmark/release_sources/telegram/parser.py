@@ -20,12 +20,26 @@ if TYPE_CHECKING:
 logger = setup_logger(__name__)
 
 KNOWN_AUDIO_FORMATS = {"m4b", "mp3", "m4a", "flac", "opus", "ogg", "aac", "wav", "wma"}
-KNOWN_EBOOK_FORMATS = {"epub", "mobi", "azw3", "azw", "pdf", "djvu", "fb2", "cbz", "cbr", "docx", "doc"}
+KNOWN_EBOOK_FORMATS = {
+    "epub",
+    "mobi",
+    "azw3",
+    "azw",
+    "pdf",
+    "djvu",
+    "fb2",
+    "cbz",
+    "cbr",
+    "docx",
+    "doc",
+}
 KNOWN_ARCHIVE_FORMATS = {"rar", "zip", "7z", "tar", "gz"}
 ALL_KNOWN_FORMATS = KNOWN_AUDIO_FORMATS | KNOWN_EBOOK_FORMATS | KNOWN_ARCHIVE_FORMATS
 
 _FORMAT_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(f) for f in sorted(ALL_KNOWN_FORMATS, key=len, reverse=True)) + r")\b",
+    r"\b("
+    + "|".join(re.escape(f) for f in sorted(ALL_KNOWN_FORMATS, key=len, reverse=True))
+    + r")\b",
     re.IGNORECASE,
 )
 
@@ -192,7 +206,7 @@ def _extract_document_info(message: Message) -> dict[str, Any]:
 
 def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResult]:
     """Parse a bot response into a list of results.
-    
+
     Supports multiple bot formats:
     - Book-list: 📚 `ID`\nAuthor Title with dl:ID buttons
     - Generic: Text-based results with metadata
@@ -204,25 +218,33 @@ def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResu
 
     for message in response.messages:
         text = message.text or message.message or ""
-        
+
         # Check if this is a book-list style response
         if "📚" in text and "`" in text:
             parsed = _parse_booklist_response(message, response)
             results.extend(parsed)
             continue
-        
+
         chat_id = None
         if hasattr(message, "chat_id"):
             chat_id = message.chat_id
         elif hasattr(message, "peer_id") and message.peer_id:
             peer = message.peer_id
-            chat_id = getattr(peer, "channel_id", None) or getattr(peer, "chat_id", None) or getattr(peer, "user_id", None)
+            chat_id = (
+                getattr(peer, "channel_id", None)
+                or getattr(peer, "chat_id", None)
+                or getattr(peer, "user_id", None)
+            )
 
         doc_info = _extract_document_info(message)
 
         if doc_info.get("has_document"):
             file_name = doc_info.get("file_name", "")
-            title = file_name.rsplit(".", 1)[0] if file_name and "." in file_name else file_name or text[:100]
+            title = (
+                file_name.rsplit(".", 1)[0]
+                if file_name and "." in file_name
+                else file_name or text[:100]
+            )
             author = None
             fmt = doc_info.get("format") or _extract_format(file_name) or _extract_format(text)
 
@@ -272,24 +294,30 @@ def parse_bot_response(response: TelegramBotResponse) -> list[TelegramParsedResu
     return results
 
 
-def _parse_booklist_response(message: Any, response: TelegramBotResponse) -> list[TelegramParsedResult]:
+def _parse_booklist_response(
+    message: Any, response: TelegramBotResponse
+) -> list[TelegramParsedResult]:
     """Parse book-list format: 📚 `ID`\nAuthor Title"""
     import re
-    
+
     text = message.text or ""
     results = []
-    
+
     # Extract all book entries: 📚 `ID`\nAuthor Title
-    pattern = r'📚 `(\d+)`\n([^\n]+)'
+    pattern = r"📚 `(\d+)`\n([^\n]+)"
     matches = re.findall(pattern, text)
-    
+
     chat_id = None
     if hasattr(message, "chat_id"):
         chat_id = message.chat_id
     elif hasattr(message, "peer_id") and message.peer_id:
         peer = message.peer_id
-        chat_id = getattr(peer, "channel_id", None) or getattr(peer, "chat_id", None) or getattr(peer, "user_id", None)
-    
+        chat_id = (
+            getattr(peer, "channel_id", None)
+            or getattr(peer, "chat_id", None)
+            or getattr(peer, "user_id", None)
+        )
+
     # Build a map of callback buttons by book ID
     button_map = {}
     if response.callback_buttons:
@@ -300,18 +328,18 @@ def _parse_booklist_response(message: Any, response: TelegramBotResponse) -> lis
             if data.startswith("dl:"):
                 book_id = data.replace("dl:", "")
                 button_map[book_id] = data
-    
+
     for book_id, metadata_line in matches:
         # Parse metadata line: "Platform Author Title" or "Author Title"
         clean_line = metadata_line.strip()
-        
+
         # Remove platform prefix if present
         platforms = ["Storytel", "Audible", "Google", "Apple", "Spotify"]
         for platform in platforms:
             if clean_line.startswith(platform + " "):
-                clean_line = clean_line[len(platform):].strip()
+                clean_line = clean_line[len(platform) :].strip()
                 break
-        
+
         # Split author and title
         if " - " in clean_line:
             parts = clean_line.split(" - ", 1)
@@ -320,10 +348,10 @@ def _parse_booklist_response(message: Any, response: TelegramBotResponse) -> lis
         else:
             author = None
             title = clean_line
-        
+
         # Get callback data for this book
         callback_data = button_map.get(book_id)
-        
+
         result = TelegramParsedResult(
             title=title,
             author=author,
@@ -344,11 +372,13 @@ def _parse_booklist_response(message: Any, response: TelegramBotResponse) -> lis
             callback_data=callback_data,
         )
         results.append(result)
-    
+
     return results
 
 
-def parse_single_result_from_text(text: str, message: Message | None = None) -> TelegramParsedResult | None:
+def parse_single_result_from_text(
+    text: str, message: Message | None = None
+) -> TelegramParsedResult | None:
     if not text or not text.strip():
         return None
 
@@ -365,7 +395,11 @@ def parse_single_result_from_text(text: str, message: Message | None = None) -> 
             chat_id = message.chat_id
         elif hasattr(message, "peer_id") and message.peer_id:
             peer = message.peer_id
-            chat_id = getattr(peer, "channel_id", None) or getattr(peer, "chat_id", None) or getattr(peer, "user_id", None)
+            chat_id = (
+                getattr(peer, "channel_id", None)
+                or getattr(peer, "chat_id", None)
+                or getattr(peer, "user_id", None)
+            )
 
     return TelegramParsedResult(
         title=title,

@@ -153,8 +153,12 @@ def test_is_available_requires_enabled_and_connected(monkeypatch):
 
     source = TelegramSource()
 
-    monkeypatch.setattr(tg_source, "_config_bool", lambda key, default=False: key == "TELEGRAM_ENABLED")
-    monkeypatch.setattr(tg_source, "_config_text", lambda key: "@testbot" if key == "TELEGRAM_BOT_USERNAME" else "")
+    monkeypatch.setattr(
+        tg_source, "_config_bool", lambda key, default=False: key == "TELEGRAM_ENABLED"
+    )
+    monkeypatch.setattr(
+        tg_source, "_config_text", lambda key: "@testbot" if key == "TELEGRAM_BOT_USERNAME" else ""
+    )
     monkeypatch.setattr(tg_source.client_manager, "_connected", True)
     monkeypatch.setattr(tg_source.client_manager, "_client", object())
 
@@ -162,8 +166,9 @@ def test_is_available_requires_enabled_and_connected(monkeypatch):
 
 
 def test_is_available_disabled():
-    import shelfmark.release_sources.telegram.source as tg_source
     from unittest.mock import patch
+
+    import shelfmark.release_sources.telegram.source as tg_source
 
     source = TelegramSource()
 

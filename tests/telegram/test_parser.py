@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
+from shelfmark.release_sources.telegram.client import TelegramBotResponse
 from shelfmark.release_sources.telegram.parser import (
-    TelegramParsedResult,
     _extract_duration,
     _extract_format,
     _extract_size,
@@ -10,7 +10,6 @@ from shelfmark.release_sources.telegram.parser import (
     parse_bot_response,
     parse_single_result_from_text,
 )
-from shelfmark.release_sources.telegram.client import TelegramBotResponse
 
 
 def test_extract_format_known_audio():

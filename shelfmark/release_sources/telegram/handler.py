@@ -72,24 +72,25 @@ class TelegramDownloadHandler(DownloadHandler):
             if callback_data and not task_source_context.get("has_document"):
                 status_callback("resolving", "Requesting file from bot")
                 logger.info("Clicking callback button: %s", callback_data)
-                
+
                 from .source import TelegramSource
+
                 source = TelegramSource()
-                
+
                 doc_info = source.download_via_callback(
                     callback_data=callback_data,
                     message_id=int(message_id),
                     chat_id=int(chat_id),
                 )
-                
+
                 if doc_info is None:
                     status_callback("error", "Bot did not send the file")
                     return None
-                
+
                 # Update message_id to the document message
                 message_id = doc_info["message_id"]
                 task_source_context["file_name"] = doc_info.get("file_name")
-            
+
             status_callback("resolving", "Resolving Telegram message")
 
             message = self._resolve_message(int(chat_id), int(message_id))
@@ -152,7 +153,7 @@ class TelegramDownloadHandler(DownloadHandler):
                 return None
 
             logger.info("Telegram download complete: %s", staging_path)
-            
+
             # Extract archive if it's a ZIP or RAR file
             if staging_path.suffix.lower() in {".zip", ".rar"}:
                 status_callback("extracting", "Extracting archive")
@@ -160,9 +161,8 @@ class TelegramDownloadHandler(DownloadHandler):
                 if extracted_folder:
                     logger.info("Archive extracted to: %s", extracted_folder)
                     return str(extracted_folder)
-                else:
-                    logger.warning("Failed to extract archive, returning original file")
-            
+                logger.warning("Failed to extract archive, returning original file")
+
             return str(staging_path)
 
         except Exception as e:
@@ -187,58 +187,58 @@ class TelegramDownloadHandler(DownloadHandler):
 
     def _extract_archive(self, archive_path: Path, audiobook_title: str) -> Path | None:
         """Extract ZIP or RAR archive to a folder with the audiobook name.
-        
+
         Args:
             archive_path: Path to the archive file
             audiobook_title: Title of the audiobook (used for folder name)
-            
+
         Returns:
             Path to the extracted folder, or None if extraction failed
         """
         import re
         import shutil
         import zipfile
-        
+
         try:
             # Create a safe folder name from the title
-            safe_title = re.sub(r'[<>:"/\\|?*]', '_', audiobook_title)
-            safe_title = safe_title.strip('. ')
+            safe_title = re.sub(r'[<>:"/\\|?*]', "_", audiobook_title)
+            safe_title = safe_title.strip(". ")
             if not safe_title:
                 safe_title = "audiobook"
-            
+
             # Create extraction folder in the same directory as the archive
             extract_dir = archive_path.parent / safe_title
             extract_dir.mkdir(parents=True, exist_ok=True)
-            
+
             logger.info("Extracting %s to %s", archive_path.name, extract_dir)
-            
+
             # Extract based on file type
             if archive_path.suffix.lower() == ".zip":
-                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                with zipfile.ZipFile(archive_path, "r") as zip_ref:
                     zip_ref.extractall(extract_dir)
             elif archive_path.suffix.lower() == ".rar":
                 import rarfile
-                with rarfile.RarFile(archive_path, 'r') as rar_ref:
+
+                with rarfile.RarFile(archive_path, "r") as rar_ref:
                     rar_ref.extractall(extract_dir)
             else:
                 logger.warning("Unsupported archive format: %s", archive_path.suffix)
                 return None
-            
+
             # Remove the original archive file after successful extraction
             archive_path.unlink()
             logger.info("Removed original archive: %s", archive_path.name)
-            
-            return extract_dir
-            
-        except zipfile.BadZipFile as e:
-            logger.error("Invalid ZIP file: %s", e)
+        except zipfile.BadZipFile:
+            logger.exception("Invalid ZIP file")
             return None
-        except Exception as e:
-            logger.exception("Failed to extract archive: %s", e)
+        except Exception:
+            logger.exception("Failed to extract archive")
             # Clean up partial extraction
             if extract_dir.exists():
                 shutil.rmtree(extract_dir, ignore_errors=True)
             return None
+        else:
+            return extract_dir
 
     def cancel(self, task_id: str) -> bool:
         logger.debug("Cancel requested for Telegram task: %s", task_id)

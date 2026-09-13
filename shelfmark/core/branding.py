@@ -154,6 +154,4 @@ def reset_asset(kind: str) -> tuple[bool, str]:
 
 def branding_status() -> dict[str, Any]:
     """Describe which custom assets are currently uploaded."""
-    return {
-        kind: get_custom_asset_path(kind) is not None for kind in ALLOWED_KINDS
-    }
+    return {kind: get_custom_asset_path(kind) is not None for kind in ALLOWED_KINDS}

@@ -1,6 +1,5 @@
 import json
 import time
-from pathlib import Path
 
 from shelfmark.release_sources import Release, ReleaseProtocol
 from shelfmark.release_sources.telegram import cache

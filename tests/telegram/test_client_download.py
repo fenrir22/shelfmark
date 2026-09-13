@@ -63,7 +63,9 @@ def test_long_active_download_not_killed_by_wall_clock():
         return FakeFuture()
 
     with (
-        patch("shelfmark.release_sources.telegram.client.time.monotonic", side_effect=fake_monotonic),
+        patch(
+            "shelfmark.release_sources.telegram.client.time.monotonic", side_effect=fake_monotonic
+        ),
         patch(
             "shelfmark.release_sources.telegram.client.asyncio.run_coroutine_threadsafe",
             side_effect=fake_run_coro_threadsafe,
@@ -102,7 +104,9 @@ def test_download_aborts_when_no_progress():
         return FakeFuture()
 
     with (
-        patch("shelfmark.release_sources.telegram.client.time.monotonic", side_effect=fake_monotonic),
+        patch(
+            "shelfmark.release_sources.telegram.client.time.monotonic", side_effect=fake_monotonic
+        ),
         patch(
             "shelfmark.release_sources.telegram.client.asyncio.run_coroutine_threadsafe",
             side_effect=fake_run_coro_threadsafe,
