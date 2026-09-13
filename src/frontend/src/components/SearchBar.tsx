@@ -552,6 +552,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
     let selectorIcon = <AudiobookIcon />;
 if (combinedMode) {
       selectorContentTypeLabel = t('books_and_audiobooks');
+      selectorIcon = <BothIcon />;
     } else if (contentType === 'ebook') {
       selectorContentTypeLabel = t('books');
       selectorIcon = <BookIcon />;

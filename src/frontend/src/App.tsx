@@ -1106,8 +1106,10 @@ function App() {
   }, [effectiveContentType, getDefaultMode]);
 
   const getCombinedSelectionPhases = useCallback(
-    (state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>): ContentType[] => {
-      const phases: ContentType[] = [];
+    (
+      state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>,
+    ): Array<'ebook' | 'audiobook'> => {
+      const phases: Array<'ebook' | 'audiobook'> = [];
       if (state.ebookMode !== 'request_book') {
         phases.push('ebook');
       }
