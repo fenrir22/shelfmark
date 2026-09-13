@@ -17,6 +17,7 @@ from shelfmark.release_sources.prowlarr.source import (
     _build_indexer_priority,
     _collapse_duplicate_indexer_results,
     _detect_content_type_from_categories,
+    _drop_unknown_indexer_ids,
     _extract_format,
     _extract_mam_language,
     _fetch_indexer_seed_settings,
@@ -1398,3 +1399,139 @@ class TestSearchBudgetScalesWithIndexerTimeout:
 
     def test_budget_stays_under_the_gunicorn_worker_timeout(self):
         assert _search_budget_seconds(300) == 240.0
+
+
+class TestSplitMamFormats:
+    """MAM's structured "[LANG / FORMATS]" bracket, split into known vs unknown tokens."""
+
+    def test_recognized_only(self):
+        from shelfmark.release_sources.prowlarr.source import _split_mam_formats
+
+        assert _split_mam_formats("Title by Author [ENG / EPUB MOBI]") == (["epub", "mobi"], [])
+
+    def test_unrecognized_only_is_surfaced(self):
+        from shelfmark.release_sources.prowlarr.source import _split_mam_formats
+
+        assert _split_mam_formats("The Martian by Andy Weir [ENG / AVI]") == ([], ["avi"])
+
+    def test_mixed_keeps_both_sides(self):
+        from shelfmark.release_sources.prowlarr.source import _split_mam_formats
+
+        assert _split_mam_formats("Title [ENG / M4B AVI]") == (["m4b"], ["avi"])
+
+    def test_no_structured_bracket(self):
+        from shelfmark.release_sources.prowlarr.source import _split_mam_formats
+
+        assert _split_mam_formats("Title [VIP]") == ([], [])
+        assert _split_mam_formats("") == ([], [])
+
+    def test_extract_mam_formats_still_returns_recognized(self):
+        from shelfmark.release_sources.prowlarr.source import _extract_mam_formats
+
+        assert _extract_mam_formats("Title [ENG / MP3]") == ["mp3"]
+        assert _extract_mam_formats("Title [ENG / AVI]") == []
+
+
+class TestUnrecognizedFormatOnRelease:
+    def _result(self, title: str) -> dict:
+        return {
+            "title": title,
+            "guid": "https://www.myanonamouse.net/t/627978",
+            "indexer": "MyAnonamouse",
+            "indexerId": 1,
+            "protocol": "torrent",
+            "size": 320000000,
+            "seeders": 800,
+            "leechers": 0,
+            "categories": [{"id": 3030}],
+        }
+
+    def test_unrecognized_format_lands_in_extra(self):
+        from shelfmark.release_sources.prowlarr.source import _prowlarr_result_to_release
+
+        release = _prowlarr_result_to_release(
+            self._result("The Martian by Andy Weir [ENG / AVI]"),
+            "audiobook",
+            enable_format_detection=True,
+        )
+        assert release.format is None
+        assert release.extra["formats"] is None
+        assert release.extra["unrecognized_formats"] == ["avi"]
+
+    def test_recognized_format_leaves_unrecognized_empty(self):
+        from shelfmark.release_sources.prowlarr.source import _prowlarr_result_to_release
+
+        release = _prowlarr_result_to_release(
+            self._result("The Martian by Andy Weir [ENG / M4B]"),
+            "audiobook",
+            enable_format_detection=True,
+        )
+        assert release.format == "m4b"
+        assert release.extra["unrecognized_formats"] is None
+
+    def test_not_populated_without_format_detection(self):
+        from shelfmark.release_sources.prowlarr.source import _prowlarr_result_to_release
+
+        release = _prowlarr_result_to_release(
+            self._result("The Martian by Andy Weir [ENG / AVI]"), "audiobook"
+        )
+        assert release.extra["unrecognized_formats"] is None
+
+
+class TestProwlarrStaleIndexerSelection:
+    """Indexers removed or disabled in Prowlarr must not be searched (#1283)."""
+
+    def test_drop_unknown_indexer_ids_keeps_only_live_indexers(self):
+        assert _drop_unknown_indexer_ids([1, 99], [{"id": 1}, {"id": 2}]) == [1]
+
+    def test_drop_unknown_indexer_ids_leaves_search_all_alone(self):
+        assert _drop_unknown_indexer_ids(None, [{"id": 1}]) is None
+
+    def _search_with_selection(self, monkeypatch, selection):
+        import shelfmark.release_sources.prowlarr.source as prowlarr_source
+
+        def fake_get(key: str, default=None):
+            values = {
+                "PROWLARR_INDEXERS": selection,
+                "PROWLARR_AUTO_EXPAND": False,
+            }
+            return values.get(key, default)
+
+        monkeypatch.setattr(prowlarr_source.config, "get", fake_get)
+
+        class RecordingClient(FakeTorznabClient):
+            def __init__(self):
+                super().__init__()
+                self.searched_indexer_ids: list[int] = []
+
+            def torznab_search(self, *, indexer_id: int, **kwargs):
+                self.searched_indexer_ids.append(indexer_id)
+                return super().torznab_search(indexer_id=indexer_id, **kwargs)
+
+        fake_client = RecordingClient()
+        source = ProwlarrSource()
+        monkeypatch.setattr(source, "_get_client", lambda: fake_client)
+
+        book = BookMetadata(
+            provider="hardcover",
+            provider_id="123",
+            title="Anything",
+            authors=["Someone"],
+        )
+
+        from shelfmark.core.search_plan import build_release_search_plan
+
+        plan = build_release_search_plan(book, languages=["en"], manual_query="my custom")
+        source.search(book, plan, content_type="ebook")
+        return fake_client
+
+    def test_search_skips_indexer_missing_from_prowlarr(self, monkeypatch):
+        # The fake Prowlarr only serves indexer 1; 99 was removed behind our back.
+        fake_client = self._search_with_selection(monkeypatch, [1, 99])
+
+        assert fake_client.searched_indexer_ids == [1]
+
+    def test_search_queries_nothing_when_every_selected_indexer_is_gone(self, monkeypatch):
+        fake_client = self._search_with_selection(monkeypatch, [98, 99])
+
+        assert fake_client.searched_indexer_ids == []

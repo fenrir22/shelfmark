@@ -285,6 +285,7 @@ export interface AppConfig {
   auto_open_downloads_sidebar: boolean; // Auto-open sidebar when download is queued
   hardcover_auto_remove_on_download: boolean; // Auto-remove from active Hardcover list on download
   download_to_browser_content_types: string[]; // Auto-download completed files to browser for selected content types
+  release_search_timeout: number; // Server-side budget for one release search, in seconds
   settings_enabled: boolean; // Whether config directory is mounted and writable
   onboarding_complete: boolean; // Whether the user has completed initial setup
   telegram_group_enabled?: boolean; // Whether the Telegram Group (manuals) source is configured
@@ -461,6 +462,27 @@ export interface SourceSearchInfo {
 }
 
 // Response from /api/releases endpoint
+/** One book split out of a multi-book pack release, files as release-relative paths. */
+export interface PackBook {
+  title: string;
+  series_position: number | null;
+  year: number | null;
+  files: string[];
+}
+
+export interface PackPlan {
+  is_pack: boolean;
+  books: PackBook[];
+  ignored: string[];
+}
+
+export interface InspectReleaseResponse {
+  inspected: boolean;
+  reason: string | null;
+  files: { path: string; size: number | null }[];
+  plan: PackPlan | null;
+}
+
 export interface ReleasesResponse {
   releases: Release[];
   book: {

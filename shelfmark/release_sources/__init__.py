@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
     from shelfmark.core.models import DownloadTask
     from shelfmark.core.search_plan import ReleaseSearchPlan
+    from shelfmark.download.postprocess.packs import PackFile
 
 from shelfmark.metadata_providers import BookMetadata
 
@@ -368,12 +369,21 @@ class ReleaseSource(ABC):
         return None
 
 
+@dataclass(frozen=True)
+class HandoffResult:
+    """An external handoff that completed without a Shelfmark book payload."""
+
+    path: str
+    message: str
+
+
 class DownloadHandler(ABC):
     """Interface for executing downloads.
 
     A handler may either:
     - download directly into ``TMP_DIR`` (managed by Shelfmark), or
     - return a path owned by an external client (e.g. torrent/usenet).
+    - finish an external handoff without producing a book payload.
 
     The orchestrator is responsible for post-processing (archive extraction, output mode
     handling) and transferring files into their final destination.
@@ -386,8 +396,8 @@ class DownloadHandler(ABC):
         cancel_flag: Event,
         progress_callback: Callable[[float], None],
         status_callback: Callable[[str, str | None], None],
-    ) -> str | None:
-        """Execute download and return a path to the downloaded payload."""
+    ) -> str | HandoffResult | None:
+        """Execute download and return a payload path or completed external handoff."""
 
     def post_process_cleanup(self, task: DownloadTask, *, success: bool) -> None:
         """Run optional cleanup after orchestrator post-processing.
@@ -400,6 +410,14 @@ class DownloadHandler(ABC):
     def build_retry_resolution_fields(self, release_data: dict[str, Any]) -> dict[str, Any]:
         """Return private queue-time fields needed for restart-safe retry."""
         return {}
+
+    def list_files(self, release_data: dict[str, Any]) -> list[PackFile] | None:
+        """Return the release's file list without downloading it.
+
+        Lets the UI review a multi-book pack before queueing. Return None when the
+        source cannot know the files ahead of time (magnet links, usenet, ...).
+        """
+        return None
 
     @abstractmethod
     def cancel(self, task_id: str) -> bool:
@@ -512,6 +530,10 @@ def browse_record_to_book_metadata(
     """Convert a source-native browse record into generic book metadata."""
     resolved_title = title_override or str(record.title or "").strip() or "Unknown title"
     resolved_author = author_override or str(record.author or "").strip()
+    # `author_override` is the frontend's display string, `authors.join(', ')` - every
+    # contributor, translators included. The split below is the only place that knows the
+    # commas were joins rather than part of a name, so `search_author` is taken from it
+    # rather than from the joined text. See issue #1252.
     authors = [part.strip() for part in resolved_author.split(",") if part.strip()]
     publish_year = None
 
@@ -528,7 +550,7 @@ def browse_record_to_book_metadata(
         provider_display_name=get_source_display_name(record.source),
         title=resolved_title,
         search_title=resolved_title,
-        search_author=resolved_author or None,
+        search_author=authors[0] if authors else None,
         authors=authors,
         cover_url=record.preview,
         description=record.description,

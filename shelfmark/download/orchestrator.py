@@ -29,6 +29,7 @@ from shelfmark.download.fs import run_blocking_io
 from shelfmark.download.postprocess.pipeline import is_torrent_source, safe_cleanup_path
 from shelfmark.download.postprocess.router import post_process_download
 from shelfmark.release_sources import (
+    HandoffResult,
     get_handler,
     get_source,
     get_source_display_name,
@@ -265,6 +266,8 @@ def queue_release(
         series_position = release_data.get("series_position") or extra.get("series_position")
         subtitle = release_data.get("subtitle") or extra.get("subtitle")
         language = release_data.get("language") or extra.get("language")
+        multi_book = bool(release_data.get("multi_book") or extra.get("multi_book"))
+        book_plan = _normalize_book_plan(release_data.get("book_plan") or extra.get("book_plan"))
 
         books_output_mode = (
             str(config.get("BOOKS_OUTPUT_MODE", "folder", user_id=user_id) or "folder")
@@ -300,6 +303,8 @@ def queue_release(
             series_position=series_position,
             subtitle=subtitle,
             language=language,
+            multi_book=multi_book or book_plan is not None,
+            book_plan=book_plan,
             search_mode=search_mode,
             output_mode=output_mode,
             output_args=output_args,
@@ -408,6 +413,33 @@ def can_retry_download_task(
     return _has_staged_retry_source(task)
 
 
+def _normalize_book_plan(value: object) -> list[dict[str, Any]] | None:
+    """Keep only well-formed pack books: a title plus a non-empty list of file paths."""
+    if not isinstance(value, list):
+        return None
+    books: list[dict[str, Any]] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        title = normalize_optional_text(entry.get("title"))
+        raw_files = entry.get("files")
+        if title is None or not isinstance(raw_files, list):
+            continue
+        files = [f for f in raw_files if isinstance(f, str) and f.strip()]
+        if not files:
+            continue
+        year = entry.get("year")
+        books.append(
+            {
+                "title": title,
+                "series_position": _optional_number(entry.get("series_position")),
+                "year": year if isinstance(year, int) and not isinstance(year, bool) else None,
+                "files": files,
+            }
+        )
+    return books or None
+
+
 def serialize_task_for_retry(task: DownloadTask) -> dict[str, Any]:
     """Serialize the task state needed for restart-safe retries."""
     raw_search_mode = getattr(task, "search_mode", None)
@@ -437,6 +469,8 @@ def serialize_task_for_retry(task: DownloadTask) -> dict[str, Any]:
         "subtitle": getattr(task, "subtitle", None),
         "language": getattr(task, "language", None),
         "search_mode": search_mode,
+        "multi_book": bool(getattr(task, "multi_book", False)),
+        "book_plan": _normalize_book_plan(getattr(task, "book_plan", None)),
         "output_mode": getattr(task, "output_mode", None),
         "output_args": dict(raw_output_args) if isinstance(raw_output_args, dict) else {},
         "user_id": getattr(task, "user_id", None),
@@ -495,6 +529,8 @@ def _restore_task_from_retry_payload(payload: object) -> DownloadTask | None:
         subtitle=normalize_optional_text(payload.get("subtitle")),
         language=normalize_optional_text(payload.get("language")),
         search_mode=search_mode,
+        multi_book=bool(payload.get("multi_book", False)),
+        book_plan=_normalize_book_plan(payload.get("book_plan")),
         output_mode=normalize_optional_text(payload.get("output_mode")),
         output_args=dict(output_args) if isinstance(output_args, dict) else {},
         user_id=normalize_positive_int(payload.get("user_id")),
@@ -714,6 +750,21 @@ def _download_task(task_id: str, cancel_flag: Event) -> str | None:
         # Handler returns temp path - orchestrator handles post-processing
         if not temp_path:
             return None
+
+        if isinstance(temp_path, HandoffResult):
+            handoff_path = Path(temp_path.path)
+            if not run_blocking_io(handoff_path.exists):
+                logger.error("Handler returned non-existent handoff path: %s", handoff_path)
+                _capture_task_error(
+                    task,
+                    message=f"Download file missing: {handoff_path}",
+                    exc_type="MissingDownloadPath",
+                )
+                return None
+            status_callback("complete", temp_path.message)
+            handler.post_process_cleanup(task, success=True)
+            _clear_task_error_state(task)
+            return str(handoff_path)
 
         temp_file = Path(temp_path)
         if not run_blocking_io(temp_file.exists):

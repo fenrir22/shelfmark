@@ -247,7 +247,7 @@ Seconds since the last WireGuard handshake before the healthcheck bounces the tu
 | `CALIBRE_WEB_URL` | Adds a navigation button to your book library (Calibre-Web Automated, Grimmory, etc). | string | _none_ |
 | `AUDIOBOOK_LIBRARY_URL` | Adds a separate navigation button for your audiobook library (Audiobookshelf, Plex, etc). When both URLs are set, icons are shown instead of text. | string | _none_ |
 | `SUPPORTED_FORMATS` | Book formats to include in search results. ZIP/RAR archives are extracted automatically and book files are used if found. | string (comma-separated) | `epub,mobi,azw3,fb2,djvu,cbz,cbr` |
-| `SUPPORTED_AUDIOBOOK_FORMATS` | Audiobook formats to include in search results. ZIP/RAR archives are extracted automatically and audiobook files are used if found. | string (comma-separated) | `m4b,mp3,m4a,flac,ogg,wma,aac,wav,opus,zip,rar` |
+| `SUPPORTED_AUDIOBOOK_FORMATS` | Audiobook formats to include in search results. ZIP/RAR archives are extracted automatically and audiobook files are used if found. | string (comma-separated) | `m4b,mp3,m4a,mp4,flac,ogg,wma,aac,wav,opus,zip,rar` |
 | `BOOK_LANGUAGE` | Default language filter for searches. | string (comma-separated) | `en` |
 
 <details>
@@ -296,16 +296,7 @@ Book formats to include in search results. ZIP/RAR archives are extracted automa
 Audiobook formats to include in search results. ZIP/RAR archives are extracted automatically and audiobook files are used if found.
 
 - **Type:** string (comma-separated)
-- **Default:** `m4b,mp3,m4a,flac,ogg,wma,aac,wav,opus,zip,rar`
-
-#### `BOOK_LANGUAGE`
-
-**Default Book Languages**
-
-Default language filter for searches.
-
-- **Type:** string (comma-separated)
-- **Default:** `en`
+- **Default:** `m4b,mp3,m4a,mp4,flac,ogg,wma,aac,wav,opus,zip,rar`
 
 </details>
 
@@ -314,6 +305,7 @@ Default language filter for searches.
 | Variable | Description | Type | Default |
 |----------|-------------|------|---------|
 | `SEARCH_MODE` | How you want to search for and download books. | string (choice) | `universal` |
+| `BOOK_LANGUAGE` | Default language filter for searches. Users can override this for their own account. | string (comma-separated) | `en` |
 | `AA_DEFAULT_SORT` | Default sort order for search results. | string (choice) | `relevance` |
 | `SHOW_RELEASE_SOURCE_LINKS` | Show clickable release-source links in release and details modals. Metadata provider links stay enabled. | boolean | `true` |
 | `SHOW_COMBINED_SELECTOR` | Show the option to search for and download both a book and audiobook together. | boolean | `true` |
@@ -336,6 +328,15 @@ How you want to search for and download books.
 - **Type:** string (choice)
 - **Default:** `universal`
 - **Options:** `direct` (Direct), `universal` (Universal)
+
+#### `BOOK_LANGUAGE`
+
+**Default Book Languages**
+
+Default language filter for searches. Users can override this for their own account.
+
+- **Type:** string (comma-separated)
+- **Default:** `en`
 
 #### `AA_DEFAULT_SORT`
 
@@ -433,8 +434,8 @@ The release source tab to open by default in the release modal for audiobooks. U
 | `BOOKS_OUTPUT_MODE` | Choose where completed book files are sent. | string (choice) | `folder` |
 | `INGEST_DIR` | Directory where downloaded files are saved. Use {User} for per-user folders (e.g. /books/{User}). | string | `/books` |
 | `FILE_ORGANIZATION` | Choose how downloaded book files are named and organized. | string (choice) | `rename` |
-| `TEMPLATE_RENAME` | Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads. | string | `{Author} - {Title} ({Year})` |
-| `TEMPLATE_ORGANIZE` | Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. | string | `{Author}/{Title} ({Year})` |
+| `TEMPLATE_RENAME` | Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads. | string | `{Author} - {Title} ({Year})` |
+| `TEMPLATE_ORGANIZE` | Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. | string | `{Author}/{Title} ({Year})` |
 | `HARDLINK_TORRENTS` | Create hardlinks instead of copying. Preserves seeding but archives won't be extracted. Don't use if destination is a library ingest folder. | boolean | `false` |
 | `BOOKLORE_HOST` | Base URL of your Grimmory instance | string | _none_ |
 | `BOOKLORE_USERNAME` | Grimmory account username | string | _none_ |
@@ -455,8 +456,8 @@ The release source tab to open by default in the release modal for audiobooks. U
 | `EMAIL_ALLOW_UNVERIFIED_TLS` | Disable TLS certificate verification (not recommended). | boolean | `false` |
 | `DESTINATION_AUDIOBOOK` | Directory where downloaded audiobook files are saved. Leave empty to use the Books destination. | string | _none_ |
 | `FILE_ORGANIZATION_AUDIOBOOK` | Choose how downloaded audiobook files are named and organized. | string (choice) | `rename` |
-| `TEMPLATE_AUDIOBOOK_RENAME` | Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads. | string | `{Author} - {Title}` |
-| `TEMPLATE_AUDIOBOOK_ORGANIZE` | Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. | string | `{Author}/{Title}/{Title}` |
+| `TEMPLATE_AUDIOBOOK_RENAME` | Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads. | string | `{Author} - {Title}` |
+| `TEMPLATE_AUDIOBOOK_ORGANIZE` | Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. | string | `{Author}/{Title}/{Title}` |
 | `HARDLINK_TORRENTS_AUDIOBOOK` | Create hardlinks instead of copying. Preserves seeding but archives won't be extracted. Don't use if destination is a library ingest folder. | boolean | `true` |
 | `AUTO_OPEN_DOWNLOADS_SIDEBAR` | Automatically open the downloads sidebar when a new download is queued. | boolean | `false` |
 | `DOWNLOAD_TO_BROWSER_CONTENT_TYPES` | Automatically download completed files to your browser for the selected content types. | string (comma-separated) | _empty list_ |
@@ -500,7 +501,7 @@ Choose how downloaded book files are named and organized.
 
 **Naming Template**
 
-Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads.
+Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads.
 
 - **Type:** string
 - **Default:** `{Author} - {Title} ({Year})`
@@ -509,7 +510,7 @@ Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source
 
 **Path Template**
 
-Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty.
+Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension). Universal adds: {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty.
 
 - **Type:** string
 - **Default:** `{Author}/{Title} ({Year})`
@@ -710,7 +711,7 @@ Choose how downloaded audiobook files are named and organized.
 
 **Naming Template**
 
-Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads.
+Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. Rename templates are filename-only (no '/' or '\'); use Organize for folders. Applies to single-file downloads.
 
 - **Type:** string
 - **Default:** `{Author} - {Title}`
@@ -719,7 +720,7 @@ Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source
 
 **Path Template**
 
-Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty.
+Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} (source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: {Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty.
 
 - **Type:** string
 - **Default:** `{Author}/{Title}/{Title}`
@@ -749,6 +750,7 @@ Automatically open the downloads sidebar when a new download is queued.
 Automatically download completed files to your browser for the selected content types.
 
 - **Type:** string (comma-separated)
+  
 - **Default:** _empty list_
 
 #### `MAX_CONCURRENT_DOWNLOADS`
@@ -1313,8 +1315,9 @@ Apply per-indexer seed time and ratio preferences from Prowlarr when sending tor
 | Variable | Description | Type | Default |
 |----------|-------------|------|---------|
 | `NEWZNAB_ENABLED` | Enable searching for books via a Newznab-compatible indexer | boolean | `false` |
-| `NEWZNAB_URL` | Base URL of your Newznab indexer or aggregator | string | _none_ |
-| `NEWZNAB_API_KEY` | Your Newznab API key (leave blank if not required) | string (secret) | _none_ |
+| `NEWZNAB_INDEXERS` | Named Newznab connections. Each row accepts `name`, `url`, and `api_key`. | JSON array | `[]` |
+| `NEWZNAB_URL` | Legacy single-indexer URL, used when `NEWZNAB_INDEXERS` is empty | string | _none_ |
+| `NEWZNAB_API_KEY` | Legacy single-indexer API key | string (secret) | _none_ |
 | `NEWZNAB_EBOOK_CATEGORIES` | Newznab category IDs searched for ebooks. Most indexers use the standard 7000, but some use custom IDs. Leave empty to use 7000. | string (comma-separated) | `7000` |
 | `NEWZNAB_AUDIOBOOK_CATEGORIES` | Newznab category IDs searched for audiobooks. Most indexers use the standard 3030, but some use custom IDs. Leave empty to use 3030. | string (comma-separated) | `3030` |
 | `NEWZNAB_AUTO_EXPAND` | Automatically retry search without category filtering if no results are found | boolean | `false` |
@@ -1331,21 +1334,36 @@ Enable searching for books via a Newznab-compatible indexer
 - **Type:** boolean
 - **Default:** `false`
 
+#### `NEWZNAB_INDEXERS`
+
+**Named Indexers**
+
+Configure multiple named Newznab-compatible indexers. The name is shown beside each search result. For environment-based configuration, provide a JSON array:
+
+```json
+[
+  {"name":"NZBGeek","url":"https://api.nzbgeek.info","api_key":"..."},
+  {"name":"DrunkenSlug","url":"https://drunkenslug.com","api_key":"..."}
+]
+```
+
+- **Type:** JSON array
+- **Default:** `[]`
+
 #### `NEWZNAB_URL`
 
-**Newznab URL**
+**Legacy Newznab URL**
 
-Base URL of your Newznab indexer or aggregator
+Single-indexer fallback used only when `NEWZNAB_INDEXERS` is empty.
 
 - **Type:** string
 - **Default:** _none_
-- **Required:** Yes
 
 #### `NEWZNAB_API_KEY`
 
-**API Key**
+**Legacy API Key**
 
-Your Newznab API key (leave blank if not required)
+API key for the legacy Newznab URL.
 
 - **Type:** string (secret)
 - **Default:** _none_
@@ -2161,6 +2179,7 @@ Enable Moly.hu as a metadata provider for book searches
 | `SOURCE_PRIORITY` | Fallback sources, may have waiting. Requires bypasser. Drag to reorder. | JSON array | _see UI for defaults_ |
 | `MAX_RETRY` | Maximum retry attempts for failed downloads. | number | `10` |
 | `DEFAULT_SLEEP` | Wait time between download retry attempts. | number | `5` |
+| `RELEASE_SEARCH_TIMEOUT` | How long one release search may run before it gives up and reports why. A first search on a cold start pays for a browser solve, so leave room for one. If you use a reverse proxy, its read timeout should be at least this high or it will cut the search off with a 504 first. | number | `300` |
 | `AA_CONTENT_TYPE_ROUTING` | Override destination based on content type metadata. | boolean | `false` |
 | `AA_CONTENT_TYPE_DIR_FICTION` | Fiction Books | string | _none_ |
 | `AA_CONTENT_TYPE_DIR_NON_FICTION` | Non-Fiction Books | string | _none_ |
@@ -2239,6 +2258,16 @@ Wait time between download retry attempts.
 - **Default:** `5`
 - **Constraints:** min: 1, max: 60
 
+#### `RELEASE_SEARCH_TIMEOUT`
+
+**Release Search Timeout (seconds)**
+
+How long one release search may run before it gives up and reports why. A first search on a cold start pays for a browser solve, so leave room for one. If you use a reverse proxy, its read timeout should be at least this high or it will cut the search off with a 504 first.
+
+- **Type:** number
+- **Default:** `300`
+- **Constraints:** min: 30, max: 1800
+
 #### `AA_CONTENT_TYPE_ROUTING`
 
 **Enable Content-Type Routing**
@@ -2315,6 +2344,7 @@ Override destination based on content type metadata.
 | `EXT_BYPASSER_URL` | URL of the external bypasser service (e.g., FlareSolverr). | string | `http://flaresolverr:8191` |
 | `EXT_BYPASSER_PATH` | API path for the external bypasser. | string | `/v1` |
 | `EXT_BYPASSER_TIMEOUT` | Timeout for external bypasser requests in milliseconds. | number | `60000` |
+| `BYPASS_PAGE_SOURCE_TIMEOUT` | How long to wait for a solved page to produce its content before the bypass is retried. Raise it if solves succeed but searches still fail. | number | `20` |
 | `BYPASS_BROWSER_IDLE_TIMEOUT` | How long the bypass helper process may sit unused before it is shut down. Higher keeps more searches fast, lower frees memory sooner. | number | `180` |
 
 <details>
@@ -2370,6 +2400,16 @@ Timeout for external bypasser requests in milliseconds.
 - **Default:** `60000`
 - **Requires restart:** Yes
 - **Constraints:** min: 10000, max: 300000
+
+#### `BYPASS_PAGE_SOURCE_TIMEOUT`
+
+**Page Read Timeout (seconds)**
+
+How long to wait for a solved page to produce its content before the bypass is retried. Raise it if solves succeed but searches still fail.
+
+- **Type:** number
+- **Default:** `20`
+- **Constraints:** min: 1, max: 120
 
 #### `BYPASS_BROWSER_IDLE_TIMEOUT`
 

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from shelfmark.core.search_plan import ReleaseSearchPlan
     from shelfmark.metadata_providers import BookMetadata
 
+from shelfmark.core.author_match import AUTHOR_UNKNOWN, author_affinity
 from shelfmark.core.config import config
 from shelfmark.core.languages import normalize_language
 from shelfmark.core.logger import setup_logger
@@ -145,6 +146,36 @@ def _build_indexer_priority(indexers: list[dict]) -> dict[int, int]:
     return priority
 
 
+def _drop_unknown_indexer_ids(
+    selected_ids: list[int] | None, indexers: list[dict]
+) -> list[int] | None:
+    """Keep only selected indexer ids Prowlarr still serves.
+
+    An indexer removed or disabled in Prowlarr stays in the saved selection,
+    where settings can no longer show it - so it cannot be unselected, and every
+    search keeps querying an indexer that is gone (#1283). Dropping it here
+    keeps the saved selection intact for an indexer that comes back.
+    """
+    if selected_ids is None:
+        return None
+
+    live_ids = {
+        indexer_id
+        for indexer in indexers
+        if (indexer_id := _coerce_indexer_id(indexer.get("id"))) is not None
+    }
+    kept = [indexer_id for indexer_id in selected_ids if indexer_id in live_ids]
+
+    stale = [indexer_id for indexer_id in selected_ids if indexer_id not in live_ids]
+    if stale:
+        logger.warning(
+            "Skipping selected Prowlarr indexers that are no longer enabled in Prowlarr: %s",
+            stale,
+        )
+
+    return kept
+
+
 def _rank_for_indexer_id(indexer_id: object, priority: dict[int, int]) -> int:
     """Preference rank for an indexer id. Lower wins, unknown ranks last."""
     coerced = _coerce_indexer_id(indexer_id)
@@ -265,6 +296,7 @@ class _IndexerSearchOutcome:
     results: list[dict]
     attempted: int = 0
     failed: int = 0
+    skipped: int = 0
     last_error: str | None = None
 
 
@@ -317,19 +349,25 @@ def _extract_mam_language(raw_title: str) -> str | None:
     return None
 
 
-def _extract_mam_formats(raw_title: str) -> list[str]:
-    """Extract a list of formats from MyAnonamouse titles.
+def _split_mam_formats(raw_title: str) -> tuple[list[str], list[str]]:
+    """Split the format tokens of a MyAnonamouse title into (recognized, unrecognized).
 
     Prowlarr's MAM parser appends a structured bracket segment like:
       [ENG / EPUB MOBI PDF]
 
     We only trust this structured segment (and do not attempt generic title
     heuristics for other indexers).
+
+    Tokens after the "/" that Shelfmark does not know as a book or audiobook format
+    (e.g. ``[ENG / AVI]``) are returned separately so the UI can warn that the release
+    will download but cannot be processed, instead of showing a bare content-type icon
+    that looks like an ordinary result.
     """
     if not raw_title:
-        return []
+        return [], []
 
     format_set = set(ALL_BOOK_FORMATS)
+    first_unrecognized: list[str] | None = None
     for bracket in re.findall(r"\[([^\]]+)\]", raw_title):
         if "/" not in bracket:
             continue
@@ -338,15 +376,26 @@ def _extract_mam_formats(raw_title: str) -> list[str]:
         tokens = re.findall(r"[A-Za-z0-9]+", after_slash)
 
         formats: list[str] = []
+        unrecognized: list[str] = []
         for token in tokens:
             fmt = token.lower()
-            if fmt in format_set and fmt not in formats:
-                formats.append(fmt)
+            if fmt in format_set:
+                if fmt not in formats:
+                    formats.append(fmt)
+            elif fmt not in unrecognized:
+                unrecognized.append(fmt)
 
         if formats:
-            return formats
+            return formats, unrecognized
+        if unrecognized and first_unrecognized is None:
+            first_unrecognized = unrecognized
 
-    return []
+    return [], first_unrecognized or []
+
+
+def _extract_mam_formats(raw_title: str) -> list[str]:
+    """Extract the recognized formats from a MyAnonamouse title (see _split_mam_formats)."""
+    return _split_mam_formats(raw_title)[0]
 
 
 def _formats_display(formats: list[str]) -> str | None:
@@ -485,6 +534,7 @@ def _prowlarr_result_to_release(
 
     format_detected: str | None = None
     formats: list[str] = []
+    unrecognized_formats: list[str] = []
     formats_display: str | None = None
     language_detected: str | None = None
     if enable_format_detection:
@@ -492,7 +542,7 @@ def _prowlarr_result_to_release(
         if book_title:
             title = book_title
 
-        formats = _extract_mam_formats(str(raw_title or ""))
+        formats, unrecognized_formats = _split_mam_formats(str(raw_title or ""))
         format_detected = formats[0] if formats else None
         formats_display = _formats_display(formats)
         language_detected = _extract_mam_language(str(raw_title or ""))
@@ -554,6 +604,9 @@ def _prowlarr_result_to_release(
             "info_hash": result.get("infoHash"),
             "formats": formats or None,
             "formats_display": formats_display,
+            # Format tokens the indexer declared but Shelfmark can't process (e.g. a MAM
+            # "[ENG / AVI]"). Lets the UI warn instead of showing a bare content icon.
+            "unrecognized_formats": unrecognized_formats or None,
             # Raw torznab attributes for rich tooltips (enriched indexers)
             "torznab_attrs": result.get("torznabAttrs"),
         },
@@ -940,6 +993,7 @@ class ProwlarrSource(ReleaseSource):
                 # found for this book" - the same lie as a swallowed timeout (#1249).
                 msg = f"could not reach Prowlarr: {e}"
                 raise SourceUnavailableError(msg) from e
+            indexer_ids = _drop_unknown_indexer_ids(indexer_ids, enabled_indexers)
             indexer_priority = _build_indexer_priority(enabled_indexers)
             # Some indexers benefit from title+author queries and extra format detection.
             enriched_indexer_ids = client.get_enriched_indexer_ids(
@@ -956,27 +1010,48 @@ class ProwlarrSource(ReleaseSource):
                 if time.monotonic() > deadline:
                     _raise_timeout_error(f"Prowlarr search timed out after {int(search_budget)}s")
 
-            def search_indexers(
-                query: str, cats: list[int] | None, *, enriched_query: str | None = None
-            ) -> _IndexerSearchOutcome:
-                """Search indexers with given categories via Torznab/Newznab."""
+            # Prowlarr's own search skips an indexer in failure back-off; the
+            # per-indexer Torznab endpoint answers 429 instead.
+            try:
+                disabled_indexers = client.get_disabled_indexers()
+            except _PROWLARR_SOURCE_ERRORS as e:
+                logger.warning("Failed to load Prowlarr indexer status: %s", e)
+                disabled_indexers = {}
+            if disabled_indexers:
+                logger.info(
+                    "Prowlarr: skipping indexer(s) in failure back-off: %s",
+                    ", ".join(
+                        f"{indexer_id} (till {till})"
+                        for indexer_id, till in sorted(disabled_indexers.items())
+                    ),
+                )
+
+            def search_indexers(query: str, cats: list[int] | None) -> _IndexerSearchOutcome:
+                """Search indexers with given categories via Torznab/Newznab.
+
+                Every indexer gets the same title-only query. Enriched indexers used
+                to be sent "{title} {author}", but an indexer that ANDs its search
+                terms (MyAnonamouse) returns nothing whenever the metadata provider
+                spells the author differently to the tracker - "Timothy Ferriss" vs
+                "Tim Ferriss" - and the UI reports the book as missing (#1293). The
+                author still decides ordering below, where a spelling difference
+                costs a release its position rather than its existence.
+                """
                 outcome = _IndexerSearchOutcome(results=[])
                 target_indexer_ids = self._get_search_indexer_ids(client, indexer_ids, cats)
                 if not target_indexer_ids:
                     return outcome
 
                 for indexer_id in target_indexer_ids:
+                    if indexer_id in disabled_indexers:
+                        outcome.skipped += 1
+                        continue
                     _check_timeout()
-                    indexer_query = (
-                        enriched_query
-                        if indexer_id in enriched_indexer_ids_set and enriched_query
-                        else query
-                    )
                     outcome.attempted += 1
                     try:
                         raw = client.torznab_search(
                             indexer_id=indexer_id,
-                            query=indexer_query,
+                            query=query,
                             categories=cats,
                             search_type="book",
                         )
@@ -996,19 +1071,17 @@ class ProwlarrSource(ReleaseSource):
             all_results: list[dict] = []
             attempted_searches = 0
             failed_searches = 0
+            skipped_searches = 0
             last_search_error: str | None = None
 
             for idx, variant in enumerate(variants, start=1):
                 _check_timeout()
                 query = variant.title
-                enriched_query = variant.query  # title + author
 
                 if len(variants) > 1:
                     logger.debug("Prowlarr query %s/%s: '%s'", idx, len(variants), query)
 
-                outcome = search_indexers(
-                    query=query, cats=categories, enriched_query=enriched_query
-                )
+                outcome = search_indexers(query=query, cats=categories)
 
                 # Auto-expand: if no results with categories and auto-expand enabled, retry without.
                 # Only when every indexer actually answered: a failed search says nothing about
@@ -1017,6 +1090,7 @@ class ProwlarrSource(ReleaseSource):
                 if (
                     not outcome.results
                     and not outcome.failed
+                    and outcome.attempted
                     and categories
                     and auto_expand_enabled
                 ):
@@ -1025,17 +1099,17 @@ class ProwlarrSource(ReleaseSource):
                         "Prowlarr: no results for query '%s' with category filter, auto-expanding search",
                         query,
                     )
-                    expanded = search_indexers(
-                        query=query, cats=None, enriched_query=enriched_query
-                    )
+                    expanded = search_indexers(query=query, cats=None)
                     outcome.results = expanded.results
                     outcome.attempted += expanded.attempted
                     outcome.failed += expanded.failed
+                    outcome.skipped += expanded.skipped
                     outcome.last_error = expanded.last_error or outcome.last_error
                     self.last_search_type = "expanded"
 
                 attempted_searches += outcome.attempted
                 failed_searches += outcome.failed
+                skipped_searches += outcome.skipped
                 last_search_error = outcome.last_error or last_search_error
 
                 for r in outcome.results:
@@ -1065,6 +1139,10 @@ class ProwlarrSource(ReleaseSource):
 
             results: list[Release] = []
             enriched_source_ids: set[str] = set()
+            affinity_by_source_id: dict[str, int] = {}
+            # A manual query is the user's own words; ranking it against the
+            # metadata author would second-guess what they typed.
+            wanted_author = "" if plan.manual_query else plan.author
 
             for raw_result in all_results:
                 result_with_seed_settings = _apply_indexer_seed_settings(
@@ -1084,13 +1162,20 @@ class ProwlarrSource(ReleaseSource):
                 if idx_id_int is not None and idx_id_int in indexer_priority:
                     release.extra["indexer_priority"] = indexer_priority[idx_id_int]
                 results.append(release)
+                affinity_by_source_id[release.source_id] = author_affinity(
+                    wanted_author, release.extra.get("author")
+                )
 
                 if is_enriched:
                     enriched_source_ids.add(release.source_id)
 
+            # Indexer priority first: it is an explicit user preference. Author
+            # agreement then orders what one indexer returned, so the editions that
+            # match the requested author lead and the rest stay reachable below.
             results.sort(
                 key=lambda r: (
                     _release_indexer_rank(r, indexer_priority),
+                    affinity_by_source_id.get(r.source_id, AUTHOR_UNKNOWN),
                     0 if r.source_id in enriched_source_ids else 1,
                 )
             )
@@ -1129,6 +1214,10 @@ class ProwlarrSource(ReleaseSource):
                     f"{failed_searches} of {attempted_searches} indexer searches failed "
                     f"({last_search_error})"
                 )
+                raise SourceUnavailableError(msg)
+            if not results and not attempted_searches and skipped_searches:
+                until = max(disabled_indexers.values(), default="later")
+                msg = f"every indexer is disabled by Prowlarr after recent failures (until {until})"
                 raise SourceUnavailableError(msg)
             return results
 

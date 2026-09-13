@@ -42,6 +42,7 @@ from shelfmark.config.settings import (
     _SUPPORTED_BOOK_LANGUAGE,
     migrate_audiobook_format_settings,
 )
+from shelfmark.core import search_deadline
 from shelfmark.core.activity_view_state_service import ActivityViewStateService
 from shelfmark.core.auth_modes import (
     get_auth_check_admin_status,
@@ -62,6 +63,7 @@ from shelfmark.core.notifications import (
     notify_user,
 )
 from shelfmark.core.prefix_middleware import PrefixMiddleware
+from shelfmark.core.release_inspect_routes import register_release_inspect_routes
 from shelfmark.core.request_helpers import (
     coerce_bool,
     emit_ws_event,
@@ -1068,6 +1070,9 @@ def _serialize_release(release: Release) -> dict:
     return result
 
 
+register_release_inspect_routes(app, login_required)
+
+
 @app.route("/api/releases/download", methods=["POST"])
 @login_required
 def api_download_release() -> Response | tuple[Response, int]:
@@ -1201,7 +1206,7 @@ def api_config() -> Response | tuple[Response, int]:
             "build_version": BUILD_VERSION,
             "release_version": RELEASE_VERSION,
             "book_languages": _SUPPORTED_BOOK_LANGUAGE,
-            "default_language": app_config.BOOK_LANGUAGE,
+            "default_language": app_config.get("BOOK_LANGUAGE", ["en"], user_id=db_user_id),
             "supported_formats": app_config.SUPPORTED_FORMATS,
             "supported_audiobook_formats": app_config.SUPPORTED_AUDIOBOOK_FORMATS,
             "search_mode": search_mode,
@@ -1226,6 +1231,12 @@ def api_config() -> Response | tuple[Response, int]:
                 [],
                 user_id=db_user_id,
             ),
+            # The client must not give up before this budget does. `/api/releases`
+            # answers a spent budget with a message naming the real cause (a protection
+            # challenge nobody could solve); a browser that aborted first replaces it
+            # with a generic network/proxy error and RELEASE_SEARCH_TIMEOUT becomes a
+            # setting the user can raise with no visible effect. See issue #1285.
+            "release_search_timeout": search_deadline.budget_seconds(),
             "settings_enabled": _is_config_dir_writable(),
             "onboarding_complete": _get_onboarding_complete(),
             "telegram_group_enabled": bool(app_config.get("TELEGRAM_GROUP_ENABLED", False))
@@ -2894,6 +2905,7 @@ def api_releases() -> Response | tuple[Response, int]:
                     manual_query=query_text if source_query_filters is not None else manual_query,
                     indexers=indexers,
                     source_filters=source_query_filters,
+                    user_id=db_user_id,
                 )
 
                 if plan.source_filters is not None:
@@ -2950,6 +2962,8 @@ def api_releases() -> Response | tuple[Response, int]:
             if languages_param
             else None
         )
+        # Without an explicit filter the plan falls back to this user's default languages.
+        db_user_id = get_session_db_user_id(session)
         # Content type for audiobook vs ebook search
         content_type = request.args.get("content_type", "ebook").strip()
 
@@ -2997,6 +3011,10 @@ def api_releases() -> Response | tuple[Response, int]:
         elif provider == "manual":
             resolved_title = title_param or manual_query or "Manual Search"
             resolved_author = author_param or ""
+            # The release modal sends `authors.join(', ')` as `author`, so the commas here
+            # are joins between contributors, not part of one name. This split is the only
+            # place that knows that, so `search_author` comes from it rather than from the
+            # joined text - see issue #1252.
             authors = [a.strip() for a in resolved_author.split(",") if a.strip()]
 
             book = BookMetadata(
@@ -3005,7 +3023,7 @@ def api_releases() -> Response | tuple[Response, int]:
                 provider_display_name="Manual Search",
                 title=resolved_title,
                 search_title=resolved_title,
-                search_author=resolved_author or None,
+                search_author=authors[0] if authors else None,
                 authors=authors,
             )
         else:
@@ -3038,18 +3056,36 @@ def api_releases() -> Response | tuple[Response, int]:
             # Search only enabled sources
             sources_to_search = [src["name"] for src in list_available_sources() if src["enabled"]]
 
-        # Search each source for releases
+        # Search each source for releases.
+        #
+        # Under a wall-clock budget: this endpoint is synchronous, and the bypass path it
+        # can reach used to be allowed minutes per URL with nothing bounding the request
+        # as a whole. A search that ran into an unsolvable protection challenge therefore
+        # outlived every reverse proxy in front of it and surfaced to the user as
+        # "Server unavailable (504)" - a gateway timeout that blames their proxy for a
+        # challenge failure. The budget is shared across sources, so a stuck first source
+        # cannot spend the whole request on its own. See issue #1276.
         all_releases = []
         errors = []
         source_instances = {}  # Keep source instances for column config
 
-        for source_name in sources_to_search:
-            source, releases, error = _search_source_releases(source_name, book)
-            if source is not None:
-                source_instances[source_name] = source
-                all_releases.extend(releases)
-            if error is not None:
-                errors.append(error)
+        # A real search is under way, so a warm-up still sitting on its start-up delay
+        # should stand down rather than queue its throwaway solve in front of this one.
+        warmup.note_user_search()
+
+        with search_deadline.search_deadline():
+            for source_name in sources_to_search:
+                if search_deadline.expired():
+                    logger.warning("Release search budget spent; %s not searched", source_name)
+                    errors.append(f"{source_name}: {search_deadline.deadline_message()}")
+                    continue
+
+                source, releases, error = _search_source_releases(source_name, book)
+                if source is not None:
+                    source_instances[source_name] = source
+                    all_releases.extend(releases)
+                if error is not None:
+                    errors.append(error)
 
         # Convert Release objects to dicts
         releases_data = [_serialize_release(release) for release in all_releases]

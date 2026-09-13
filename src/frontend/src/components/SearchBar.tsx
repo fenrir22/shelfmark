@@ -4,8 +4,8 @@ import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'reac
 import { t } from '../i18n';
 import { useSearchMode } from '../contexts/SearchModeContext';
 import { useSearchBarAutocomplete } from '../hooks/searchBar/useSearchBarAutocomplete';
-import { useSearchBarHoverTimeout } from '../hooks/searchBar/useSearchBarHoverTimeout';
 import { useDismiss } from '../hooks/useDismiss';
+import { useLatestCallback } from '../hooks/useLatestCallback';
 import type { DynamicFieldOption } from '../services/api';
 import type { ContentType, MetadataSearchField, QueryTargetOption, SortOption } from '../types';
 import { SearchBarAutocompleteSession } from './SearchBarAutocompleteSession';
@@ -51,6 +51,8 @@ export interface SearchBarHandle {
 const EMPTY_SORT_OPTIONS: SortOption[] = [];
 const EMPTY_AUTOCOMPLETE_OPTIONS: DynamicFieldOption[] = [];
 const EMPTY_QUERY_TARGETS: QueryTargetOption[] = [];
+
+const SEARCH_CONTROLS_PANEL_ID = 'search-bar-controls-panel';
 
 const BookIcon = () => (
   <svg
@@ -198,8 +200,9 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
     const { searchMode } = useSearchMode();
     const inputRef = useRef<HTMLInputElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
-    const onSubmitRef = useRef(onSubmit);
-    onSubmitRef.current = onSubmit;
+    // Deferred submits below run from a timeout, not an Effect, so this is a latest-value
+    // callback rather than an Effect Event. See useLatestCallback.
+    const submitLatest = useLatestCallback(() => onSubmit());
     const selectorRef = useRef<HTMLDivElement>(null);
     const hasSearchQuery = hasActiveValue(value);
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -208,7 +211,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
     const selectTriggerRef = useRef<HTMLButtonElement>(null);
     const selectPanelRef = useRef<HTMLDivElement>(null);
     const autocompletePanelRef = useRef<HTMLDivElement>(null);
-    const { hoverTimeoutRef: selectorHoverTimeout, clearHoverTimeout } = useSearchBarHoverTimeout();
+    const controlsPanelRef = useRef<HTMLDivElement>(null);
 
     const hasMultipleContentTypes = !allowedContentTypes || allowedContentTypes.length !== 1;
     const showContentTypeSelector =
@@ -224,9 +227,20 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       () => queryTargets.find((target) => target.key === activeQueryTarget) ?? queryTargets[0],
       [queryTargets, activeQueryTarget],
     );
-    const showActiveTargetLabel = queryTargets.length > 0 && activeTarget.source !== 'general';
+    const showActiveTargetLabel = queryTargets.length > 0 && activeTarget?.source !== 'general';
 
-    useDismiss(isSelectorOpen, [selectorRef], () => setIsSelectorOpen(false));
+    // Manual search browses release sources directly, one media type at a time — the
+    // combined ("both") flow doesn't apply. Present a plain, switchable Books/Audiobooks
+    // choice for it, even when combined search is forced on for metadata targets.
+    const isManualTarget = activeTarget?.source === 'manual';
+    const combinedSelectionActive = combinedMode && !isManualTarget;
+    const combinedSelectorLocked = combinedModeLocked && !isManualTarget;
+    const combinedToggleAvailable = !!onCombinedModeChange && !isManualTarget;
+    const combinedLineColor = combinedSelectionActive
+      ? 'bg-emerald-500'
+      : 'bg-(--border-muted) group-hover:bg-zinc-400 dark:group-hover:bg-zinc-500';
+
+    useDismiss(isSelectorOpen, [selectorRef, controlsPanelRef], () => setIsSelectorOpen(false));
     useDismiss(isSelectOpen, [selectPanelRef, selectTriggerRef], () => setIsSelectOpen(false));
     useDismiss(isAutocompleteOpen, [autocompletePanelRef, inputRef], () =>
       setIsAutocompleteOpen(false),
@@ -328,18 +342,15 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
     const handleContentTypeSelect = (type: ContentType) => {
       onContentTypeChange?.(type);
       onCombinedModeChange?.(false);
-      setIsSelectorOpen(false);
     };
 
     const handleCombinedModeSelect = () => {
       if (combinedMode) {
-        // Toggle off — revert to ebook-only
         onCombinedModeChange?.(false);
       } else {
         onContentTypeChange?.('ebook');
         onCombinedModeChange?.(true);
       }
-      setIsSelectorOpen(false);
     };
 
     const handleQueryTargetSelect = (targetKey: string) => {
@@ -352,14 +363,13 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       setIsSelectOpen(shouldOpenSelect);
       setIsAutocompleteOpen(false);
       resetAutocomplete();
-      setIsSelectorOpen(false);
     };
 
     const effectivePlaceholder = getDefaultPlaceholder(
       contentType,
       activeTarget,
       placeholder,
-      combinedMode,
+      combinedSelectionActive,
     );
     const effectiveSearchButtonLabel = searchButtonLabel === t('search_books') && contentType === 'manuale'
       ? t('search_manuals')
@@ -410,7 +420,6 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                 setAutocompleteDraftValue(nextValue);
                 setIsAutocompleteOpen(nextValue.trim().length >= autocompleteMinQueryLength);
                 setIsSelectOpen(false);
-                setIsSelectorOpen(false);
                 onChange(nextValue);
                 return;
               }
@@ -422,7 +431,6 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                 textInputValue.trim().length >= autocompleteMinQueryLength
               ) {
                 setIsAutocompleteOpen(true);
-                setIsSelectorOpen(false);
               }
             }}
             onKeyDown={handleKeyDown}
@@ -488,7 +496,6 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
               onClick={() => {
                 if (!disabled && !isDynamicLoading) {
                   setIsSelectOpen((prev) => !prev);
-                  setIsSelectorOpen(false);
                   setIsAutocompleteOpen(false);
                 }
               }}
@@ -543,9 +550,8 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
 
     let selectorContentTypeLabel = t('audiobooks');
     let selectorIcon = <AudiobookIcon />;
-    if (combinedMode) {
+if (combinedMode) {
       selectorContentTypeLabel = t('books_and_audiobooks');
-      selectorIcon = <BothIcon />;
     } else if (contentType === 'ebook') {
       selectorContentTypeLabel = t('books');
       selectorIcon = <BookIcon />;
@@ -602,25 +608,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
           }}
         >
           {showQueryTargetSelector && (
-            <div
-              className="relative flex shrink-0 self-stretch"
-              ref={selectorRef}
-              onPointerEnter={(e) => {
-                if (e.pointerType !== 'mouse') return;
-                clearHoverTimeout();
-                setIsSelectorOpen(true);
-                setIsSelectOpen(false);
-                setIsAutocompleteOpen(false);
-              }}
-              onPointerLeave={(e) => {
-                if (e.pointerType !== 'mouse') return;
-                clearHoverTimeout();
-                selectorHoverTimeout.current = setTimeout(() => {
-                  setIsSelectorOpen(false);
-                  selectorHoverTimeout.current = null;
-                }, 150);
-              }}
-            >
+            <div className="relative flex shrink-0 self-stretch" ref={selectorRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -628,11 +616,11 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                   setIsSelectOpen(false);
                   setIsAutocompleteOpen(false);
                 }}
-                className="hover-action flex items-center gap-1.5 rounded-l-full pr-2 pl-5 transition-colors"
+                className="hover-action flex cursor-pointer items-center gap-1.5 rounded-l-full pr-2 pl-5 transition-colors"
                 style={{ color: 'var(--text)' }}
                 aria-label={`Searching ${selectorContentTypeLabel} by ${activeTarget?.label ?? 'general'}. Click to change.`}
                 aria-expanded={isSelectorOpen}
-                aria-haspopup="dialog"
+                aria-controls={SEARCH_CONTROLS_PANEL_ID}
               >
                 {selectorIcon}
                 {showActiveTargetLabel && (
@@ -655,7 +643,6 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                   />
                 </svg>
               </button>
-
               <div
                 className="absolute top-1/2 right-0 h-6 w-px -translate-y-1/2"
                 style={{ background: 'var(--border-muted)' }}
@@ -1027,7 +1014,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                         onClick={() => {
                           onChange(option.value, option.label);
                           setIsSelectOpen(false);
-                          setTimeout(() => onSubmitRef.current(), 0);
+                          setTimeout(() => submitLatest(), 0);
                         }}
                         className={`flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm transition-colors ${
                           isSelected ? '' : 'hover-surface'
@@ -1097,7 +1084,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                           setAutocompleteSelection(option.value, option.label);
                           onChange(option.value, option.label);
                           setIsAutocompleteOpen(false);
-                          setTimeout(() => onSubmitRef.current(), 0);
+                          setTimeout(() => submitLatest(), 0);
                         }}
                         className="hover-surface w-full px-5 py-3 text-left text-sm transition-colors"
                         style={{ color: 'var(--text)' }}
@@ -1115,6 +1102,246 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
             </div>
           )}
         </div>
+
+        {showQueryTargetSelector && isSelectorOpen && (
+          <div
+            id={SEARCH_CONTROLS_PANEL_ID}
+            className="animate-fade-in-down flex flex-wrap items-start gap-x-8 gap-y-2 px-1 pt-2"
+            ref={controlsPanelRef}
+          >
+            {showContentTypeSelector && (
+              <div className="shrink-0">
+                <div className="flex items-center justify-between pb-1.5">
+                  <span className="text-xs font-medium tracking-wide uppercase opacity-60">
+                    Content
+                  </span>
+                  {onAdvancedToggle && (
+                    <button
+                      type="button"
+                      onClick={onAdvancedToggle}
+                      className={`-mt-1.5 -mr-1 -mb-0.5 flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-medium transition-colors ${
+                        isAdvancedActive ? 'bg-emerald-600 text-white' : 'hover-surface'
+                      }`}
+                      style={
+                        isAdvancedActive
+                          ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                          : { color: 'var(--text-muted)' }
+                      }
+                    >
+                      <svg
+                        className="h-3.5 w-3.5"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth="1.5"
+                        stroke="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+                        />
+                      </svg>
+                      Options
+                    </button>
+                  )}
+                </div>
+                <div className="grid w-fit grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleContentTypeSelect('ebook')}
+                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                      contentType === 'ebook' || combinedSelectionActive
+                        ? 'bg-emerald-600 text-white'
+                        : 'hover-surface'
+                    }`}
+                    style={
+                      contentType === 'ebook' || combinedSelectionActive
+                        ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                        : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                    }
+                  >
+                    <span className="flex w-4 justify-center">
+                      {contentType === 'ebook' || combinedSelectionActive ? (
+                        <CheckIcon />
+                      ) : (
+                        <BookIcon />
+                      )}
+                    </span>
+                    <span>Books</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleContentTypeSelect('audiobook')}
+                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                      contentType === 'audiobook' || combinedSelectionActive
+                        ? 'bg-emerald-600 text-white'
+                        : 'hover-surface'
+                    }`}
+                    style={
+                      contentType === 'audiobook' || combinedSelectionActive
+                        ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                        : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                    }
+                  >
+                    <span className="flex w-4 justify-center">
+                      {contentType === 'audiobook' || combinedSelectionActive ? (
+                        <CheckIcon />
+                      ) : (
+                        <AudiobookIcon />
+                      )}
+                    </span>
+                    <span>Audiobooks</span>
+                  </button>
+                  {combinedToggleAvailable && (
+                    <div className="col-span-2">
+                      <Tooltip
+                        content="Combined search"
+                        position="bottom"
+                        triggerClassName="w-full"
+                      >
+                        <button
+                          type="button"
+                          onClick={handleCombinedModeSelect}
+                          className="group w-full cursor-pointer"
+                          aria-label="Combined search"
+                        >
+                          <div className="relative flex h-7 items-end">
+                            <div
+                              className={`absolute top-1.5 bottom-[11px] left-[25%] w-px transition-colors ${combinedLineColor}`}
+                            />
+                            <div
+                              className={`absolute top-1.5 right-[25%] bottom-[11px] w-px transition-colors ${combinedLineColor}`}
+                            />
+                            <div
+                              className={`absolute bottom-[11px] left-[25%] h-px transition-colors ${combinedLineColor}`}
+                              style={{ width: 'calc(25% - 16px)' }}
+                            />
+                            <div
+                              className={`absolute right-[25%] bottom-[11px] h-px transition-colors ${combinedLineColor}`}
+                              style={{ width: 'calc(25% - 16px)' }}
+                            />
+                            <div
+                              className={`relative z-10 mx-auto rounded-full p-1 transition-colors ${
+                                combinedSelectionActive
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-(--bg) text-zinc-400 group-hover:bg-zinc-200 group-hover:text-zinc-600 dark:text-zinc-500 dark:group-hover:bg-zinc-700 dark:group-hover:text-zinc-300'
+                              }`}
+                            >
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth="2"
+                                stroke="currentColor"
+                                aria-hidden="true"
+                              >
+                                {combinedSelectorLocked ? (
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                                  />
+                                ) : (
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"
+                                  />
+                                )}
+                              </svg>
+                            </div>
+                          </div>
+                        </button>
+                      </Tooltip>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {queryTargets.length > 1 && (
+              <div className="shrink-0">
+                <div className="flex items-center justify-between pb-1.5">
+                  <span className="text-xs font-medium tracking-wide uppercase opacity-60">
+                    Search By
+                  </span>
+                  {!showContentTypeSelector && onAdvancedToggle && (
+                    <button
+                      type="button"
+                      onClick={onAdvancedToggle}
+                      className={`-mt-1.5 -mr-1 -mb-0.5 flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-medium transition-colors ${
+                        isAdvancedActive
+                          ? `${searchMode === 'direct' ? 'bg-sky-700' : 'bg-emerald-600'} text-white`
+                          : 'hover-surface'
+                      }`}
+                      style={
+                        isAdvancedActive
+                          ? {
+                              borderColor:
+                                searchMode === 'direct'
+                                  ? 'rgb(3 105 161 / 0.7)'
+                                  : 'rgb(16 185 129 / 0.7)',
+                            }
+                          : { color: 'var(--text-muted)' }
+                      }
+                    >
+                      <svg
+                        className="h-3.5 w-3.5"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth="1.5"
+                        stroke="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+                        />
+                      </svg>
+                      Options
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {queryTargets.map((target) => {
+                    const isActive = target.key === activeTarget?.key;
+                    return (
+                      <button
+                        type="button"
+                        key={target.key}
+                        onClick={() => handleQueryTargetSelect(target.key)}
+                        title={target.description || target.label}
+                        aria-label={target.label}
+                        className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? `${searchMode === 'direct' ? 'bg-sky-700' : 'bg-emerald-600'} text-white`
+                            : 'hover-surface'
+                        }`}
+                        style={
+                          isActive
+                            ? {
+                                borderColor:
+                                  searchMode === 'direct'
+                                    ? 'rgb(3 105 161 / 0.7)'
+                                    : 'rgb(16 185 129 / 0.7)',
+                              }
+                            : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                        }
+                      >
+                        {isActive && <CheckIcon />}
+                        <span className="block truncate">{target.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </>
     );
   },

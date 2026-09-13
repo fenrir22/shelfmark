@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from shelfmark.metadata_providers import BookMetadata
 
 from shelfmark.api.websocket import ws_manager
+from shelfmark.core.author_match import author_affinity, search_surname
 from shelfmark.core.config import config
 from shelfmark.core.logger import setup_logger
 from shelfmark.core.utils import is_audiobook
@@ -83,6 +84,18 @@ def _emit_status(message: str, phase: str = "searching") -> None:
         message=message,
         phase=phase,
     )
+
+
+def _reported_author(release: Release) -> str:
+    """The author a result actually claims, with the parser's sentinel read as none.
+
+    A filename with no " - " separator has no author to report and parser.py:168
+    fills in "Unknown". Ranked literally that sorts as a wrong author, below every
+    result that named someone else; as absent it sorts between agreement and
+    disagreement, which is what the tier was built for.
+    """
+    author = release.extra.get("author", "")
+    return "" if author == "Unknown" else author
 
 
 # Rate limiting to avoid server throttling
@@ -226,11 +239,14 @@ class IRCReleaseSource(ReleaseSource):
             logger.debug("IRC source is disabled, skipping search")
             return []
 
-        # Build search query
-        query = plan.primary_query or self._build_query(book)
+        query = self._build_query(book, plan)
         if not query:
             logger.warning("No search query could be built")
             return []
+
+        # A manual query is the user's own words; ranking it against the metadata
+        # author would second-guess what they typed.
+        wanted_author = "" if plan.manual_query else plan.author
 
         # Get IRC settings
         server = _config_text("IRC_SERVER")
@@ -276,7 +292,9 @@ class IRCReleaseSource(ReleaseSource):
             if cached:
                 _emit_status("Using cached results", phase="complete")
                 self._online_servers = set(cached.get("online_servers", []))
-                return self._filter_by_content_type(cached["releases"], requested)
+                return self._rank_by_author(
+                    self._filter_by_content_type(cached["releases"], requested), wanted_author
+                )
 
         # Anti-spam cap: the exact same query may only be POSTED a limited number of times
         # per window, even via refresh. Beyond that, serve whatever is cached rather than
@@ -293,7 +311,9 @@ class IRCReleaseSource(ReleaseSource):
             cached = get_cached_results(query_key)
             if cached:
                 self._online_servers = set(cached.get("online_servers", []))
-                return self._filter_by_content_type(cached["releases"], requested)
+                return self._rank_by_author(
+                    self._filter_by_content_type(cached["releases"], requested), wanted_author
+                )
             return []
 
         logger.info("IRC search: %s", query)
@@ -369,7 +389,12 @@ class IRCReleaseSource(ReleaseSource):
                 ebook_releases + audiobook_releases,
                 online_servers=online_servers,
             )
-            releases = audiobook_releases if requested == "audiobook" else ebook_releases
+            # Ranked on the way out, never before the cache: one query identity is
+            # shared by every book that produced the same query, so the order has to
+            # follow the author asked for now, not the one that filled the cache.
+            releases = self._rank_by_author(
+                audiobook_releases if requested == "audiobook" else ebook_releases, wanted_author
+            )
 
         except DCCError as e:
             logger.exception("DCC error during search")
@@ -387,21 +412,47 @@ class IRCReleaseSource(ReleaseSource):
         else:
             return releases
 
-    def _build_query(self, book: BookMetadata) -> str:
-        """Build search query from book metadata."""
-        parts = []
+    def _build_query(self, book: BookMetadata, plan: ReleaseSearchPlan) -> str:
+        """Build the line posted to the channel: a title, plus a surname.
 
-        if book.search_title or book.title:
-            parts.append(book.search_title or book.title)
+        Both come off the variant rather than the plan: an ISBN fallback variant
+        carries `author=""` on purpose (search_plan.py:246), and so does a manual
+        query, so reading `plan.author` here would append a surname to searches
+        that deliberately have none.
 
-        if book.search_author:
-            parts.append(book.search_author)
-        elif book.authors:
-            # Use first author
-            author = book.authors[0] if isinstance(book.authors, list) else book.authors
-            parts.append(author)
-
+        Returns "" without a title, so the caller reports "no query" rather than
+        posting one. A surname on its own is not a search: `@search Petrie` asks
+        the bot for every Petrie on the channel, and a bare over-broad line is the
+        kind of post `is_available` refuses queries to avoid being banned for.
+        """
+        variant = plan.title_variants[0] if plan.title_variants else None
+        title = variant.title if variant else (book.search_title or book.title)
+        if not title:
+            return ""
+        author = variant.author if variant else plan.author
+        parts = [part for part in (title, search_surname(author)) if part]
         return " ".join(parts)
+
+    def _rank_by_author(self, releases: list[Release], wanted_author: str) -> list[Release]:
+        """Order releases by author agreement, under the server's availability.
+
+        A surname is a weak filter - it also matches a different author who shares
+        it - so the full name decides the order while the search bot decides the
+        set. Availability stays the outer key: downloading asks one named bot and
+        waits 120s for it (handler.py:133-139), so a release from a bot that is not
+        in the channel must not outrank one that can actually answer. Sorting is
+        stable, so format and server order survive inside each tier.
+        """
+        if not wanted_author:
+            return releases
+        online = self._online_servers or set()
+        return sorted(
+            releases,
+            key=lambda release: (
+                0 if release.extra.get("server", "") in online else 1,
+                author_affinity(wanted_author, _reported_author(release)),
+            ),
+        )
 
     # Format priority for sorting (lower = higher priority)
     EBOOK_FORMAT_PRIORITY: ClassVar[dict[str, int]] = {
@@ -428,14 +479,15 @@ class IRCReleaseSource(ReleaseSource):
         "m4b": 0,
         "mp3": 1,
         "m4a": 2,
-        "flac": 3,
-        "opus": 4,
-        "ogg": 5,
-        "aac": 6,
-        "wav": 7,
-        "wma": 8,
-        "rar": 9,
-        "zip": 10,
+        "mp4": 3,
+        "flac": 4,
+        "opus": 5,
+        "ogg": 6,
+        "aac": 7,
+        "wav": 8,
+        "wma": 9,
+        "rar": 10,
+        "zip": 11,
     }
 
     def _convert_to_releases(

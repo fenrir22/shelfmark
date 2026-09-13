@@ -50,6 +50,7 @@ _STATUS_DOWNLOADING = frozenset(
     {
         "magnet_conversion",
         "waiting_files_selection",
+        "queued",
         "downloading",
         "compressing",
         "uploading",
@@ -80,6 +81,7 @@ _BOOK_EXTENSIONS = (
     ".m4b",
     ".mobi",
     ".mp3",
+    ".mp4",
     ".ogg",
     ".opus",
     ".pdf",

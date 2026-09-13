@@ -6,6 +6,8 @@ import re
 import threading
 import time
 import unicodedata
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 from http import HTTPStatus
 from pathlib import Path
@@ -16,7 +18,9 @@ import requests
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
 
+from shelfmark.bypass.challenge import MAX_CHALLENGE_HTML_CHARS, challenge_marker
 from shelfmark.config.env import DEBUG_SKIP_SOURCES, TMP_DIR
+from shelfmark.core import search_deadline
 from shelfmark.core.config import config
 from shelfmark.core.languages import language_alias_map
 from shelfmark.core.logger import setup_logger
@@ -42,7 +46,7 @@ from shelfmark.release_sources import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
     from threading import Event
 
@@ -109,6 +113,16 @@ def _html_response_text(response: str | tuple[str, str]) -> str:
     if isinstance(response, tuple):
         return response[0]
     return response
+
+
+def _html_response_url(response: str | tuple[str, str]) -> str | None:
+    """The URL that actually answered, when the downloader was asked to report it.
+
+    None for the plain-string shape, so a caller can fall back to what it requested.
+    """
+    if isinstance(response, tuple):
+        return response[1] or None
+    return None
 
 
 def _attr_to_str(value: object) -> str | None:
@@ -555,13 +569,6 @@ _AA_PAGE_MARKERS = (
     "/fast_download",
     "/slow_download",
 )
-_CHALLENGE_MARKERS = (
-    "ddos-guard",
-    "just a moment",
-    "cloudflare",
-    "checking your browser",
-    "cf-browser-verification",
-)
 
 
 def _looks_like_aa_page(html: str) -> bool:
@@ -571,12 +578,120 @@ def _looks_like_aa_page(html: str) -> bool:
 
 
 def _looks_like_challenge_page(html: str) -> bool:
-    """Whether ``html`` is a protection interstitial rather than the site behind it."""
-    lowered = html.lower()
-    return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+    """Whether ``html`` is a protection interstitial rather than the site behind it.
+
+    Delegates to the shared detector rather than substring-matching here. A bare
+    "ddos-guard"/"cloudflare" scan flags the protected site's *own* pages: DDoS-Guard
+    links its endpoints on everything it fronts, and AA ships a `DDOS-GUARD` comment in
+    the inline JS on every page it serves. That misread every real AA response that was
+    not a results table as an unsolved challenge, and sent users off to fix a bypasser
+    that had just succeeded - see #1289/#1292. `challenge_marker` caps its scan at
+    64 KB, which is what separates a few-KB interstitial from the page behind it.
+    """
+    return challenge_marker(html) is not None
+
+
+# Pages already fetched during the search in flight, keyed by URL. Scoped to one
+# DirectDownload.search() so nothing is carried between requests.
+_search_page_cache: ContextVar[dict[str, tuple[str, Tag | None]] | None] = ContextVar(
+    "aa_search_page_cache", default=None
+)
+
+
+@contextmanager
+def _search_page_reuse() -> Iterator[None]:
+    """Fetch each distinct AA search URL at most once per search.
+
+    One search asks AA for the same URL more than once. The language-filter retry in
+    `search()` re-runs every title variant, and when DIRECT_DOWNLOAD_LANGUAGE_FROM_PATH
+    is on the requested language is applied locally instead of as `&lang=`, so both
+    passes build a byte-identical URL - the retry differs only in the filtering it does
+    to the response it already had. A repeat is not a cheap round trip either: AA is
+    behind DDoS-Guard, so each one is a fresh browser solve, tens of seconds that buy
+    nothing. See issue #1285.
+    """
+    token = _search_page_cache.set({})
+    try:
+        yield
+    finally:
+        _search_page_cache.reset(token)
+
+
+def _is_reusable_answer(result: tuple[str, Tag | None]) -> bool:
+    """Whether a fetched page is an answer, rather than a giving-up worth retrying.
+
+    `_fetch_search_table_uncached` exists to rotate past mirrors that are not actually AA,
+    and when it runs out of them it *returns* instead of raising: a page with no results
+    table and no marker. Storing that would hand the language-filter retry - the pass this
+    cache exists for - a mirror set that may have recovered in between (DNS rotation, a
+    mirror coming back), turning a transient outage into "this book has no releases". A
+    real "No files found." is an answer and is worth keeping.
+    """
+    html, tbody = result
+    return tbody is not None or "No files found." in html or _looks_like_aa_page(html)
+
+
+# How much of an unreadable search page to quote in the debug log. Enough to carry the
+# <head> - title, injected challenge scripts - without pasting a 180 KB page into a log
+# file that ships inside the debug bundle.
+_PAGE_FINGERPRINT_CHARS = 700
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+def _log_untabled_search_page(url: str, html: str) -> None:
+    """Record why a search page with no results table is about to be classified.
+
+    #1289 cost a full investigation because the log said only "unsolved protection
+    challenge" while FlareSolverr said "Challenge solved!", and the debug bundle carries
+    no response bodies - there was no way to tell a real AA page from an interstitial
+    after the fact. These are the facts that would have settled it in one line: the size
+    (the 64 KB cap is what separates the two), which markers matched, and the head of
+    the document.
+
+    Diagnostics must never be the reason a search fails, so this swallows its own errors.
+    """
+    try:
+        title_match = _TITLE_RE.search(html[: _PAGE_FINGERPRINT_CHARS * 4])
+        title = " ".join(title_match.group(1).split())[:120] if title_match else "<none>"
+        lowered = html.lower()
+        aa_markers = [marker for marker in _AA_PAGE_MARKERS if marker in lowered]
+        logger.info(
+            "Search page has no results table: %s (bytes=%d, title=%r, aa_markers=%s, "
+            "challenge_marker=%r, over_challenge_size_cap=%s)",
+            url,
+            len(html),
+            title,
+            aa_markers or "none",
+            challenge_marker(html),
+            len(html) > MAX_CHALLENGE_HTML_CHARS,
+        )
+        logger.debug(
+            "Untabled search page head (%d of %d bytes): %s",
+            min(len(html), _PAGE_FINGERPRINT_CHARS),
+            len(html),
+            html[:_PAGE_FINGERPRINT_CHARS],
+        )
+    except Exception:
+        logger.debug("Could not fingerprint the untabled search page", exc_info=True)
 
 
 def _fetch_search_table(url: str, selector: network.AAMirrorSelector) -> tuple[str, Tag | None]:
+    """Fetch the AA search page, reusing one already fetched during this search."""
+    cache = _search_page_cache.get()
+    if cache is not None and url in cache:
+        logger.debug("Reusing search page already fetched for this search: %s", url)
+        return cache[url]
+
+    result = _fetch_search_table_uncached(url, selector)
+
+    if cache is not None and _is_reusable_answer(result):
+        cache[url] = result
+    return result
+
+
+def _fetch_search_table_uncached(
+    url: str, selector: network.AAMirrorSelector
+) -> tuple[str, Tag | None]:
     """Fetch the AA search page, retrying past mirrors that are not actually AA.
 
     A parked or seized domain answers 200 with a page that has no results table and no
@@ -586,15 +701,35 @@ def _fetch_search_table(url: str, selector: network.AAMirrorSelector) -> tuple[s
     """
     attempt_url = url
     for _ in range(len(network.get_available_aa_urls()) or 1):
-        response = downloader.html_get_page(
-            attempt_url, selector=selector, allow_bypasser_fallback=True
-        )
-        if not response:
-            # Network/mirror exhaustion path bubbles up so API can notify clients
-            msg = "Unable to reach download source. Network restricted or mirrors are blocked."
-            raise SearchUnavailableError(msg)
+        # Every mirror shares the protection, so once the search budget is gone another
+        # mirror is another full solve nobody is still waiting for.
+        if search_deadline.expired():
+            raise SearchUnavailableError(search_deadline.deadline_message())
 
+        # include_response_url is what makes the diagnostics below name the mirror that
+        # actually answered. html_get_page rotates mirrors and follows redirects on its
+        # own, so `attempt_url` is only where this iteration started: #1298's bundle
+        # reported the untabled page against annas-archive.gl when the body had come
+        # from .pk, which is precisely the triage cost #1289 added the line to remove.
+        response = downloader.html_get_page(
+            attempt_url,
+            selector=selector,
+            allow_bypasser_fallback=True,
+            include_response_url=True,
+        )
         html = _html_response_text(response)
+        # Checked on the body, not on `response`: with include_response_url the give-up
+        # shape is the tuple ("", url), and a tuple is truthy.
+        if not html:
+            # Network/mirror exhaustion path bubbles up so API can notify clients.
+            # html_get_page records the concrete give-up reason on the selector; fall
+            # back to the generic line only if nothing was recorded.
+            detail = getattr(selector, "last_failure", None) or (
+                "Network restricted or mirrors are blocked."
+            )
+            raise SearchUnavailableError(f"Unable to reach download source. {detail}")
+
+        answered_url = _html_response_url(response) or attempt_url
         soup = BeautifulSoup(html, "html.parser")
         table = soup.find("table")
         if isinstance(table, Tag):
@@ -605,20 +740,38 @@ def _fetch_search_table(url: str, selector: network.AAMirrorSelector) -> tuple[s
         if "No files found." in html:
             # A real, genuinely empty answer from a healthy mirror.
             return html, None
+
+        # A search page with no table is the one shape we cannot read off the response
+        # alone, and the response body is not in the debug bundle. Fingerprint it here
+        # so the next report says which branch fired and why, rather than costing
+        # another round of guesswork - see #1289.
+        _log_untabled_search_page(answered_url, html)
+
+        if _looks_like_aa_page(html):
+            # A real AA response in a shape the caller should report as drift. Checked
+            # ahead of the challenge branch: AA's own pages carry the protection's
+            # markers, so an interstitial is only the better explanation once the page
+            # has nothing of AA's about it. A genuine interstitial has no AA markers.
+            return html, None
         if _looks_like_challenge_page(html):
             # The bypass did not actually clear the protection - the interstitial is
             # what came back. Rotating is pointless (every mirror shares the same
             # protection) and reporting it as an empty result is worse: the user is
             # told their query found nothing when the search never ran.
+            #
+            # The wording no longer blames the bypasser outright. In #1292 it was
+            # reachable and working, and the page it was handed was DDoS-Guard's manual
+            # CAPTCHA - so "check that the bypasser is working" was the one piece of
+            # advice guaranteed to waste the reporter's time. Name the marker instead
+            # and let the two causes be told apart.
             msg = (
-                "Anna's Archive answered with an unsolved protection challenge. "
-                "Check that the bypasser is reachable and working."
+                "Anna's Archive answered with a protection challenge that was not "
+                f"cleared (marker={challenge_marker(html)!r}). If the bypasser reports "
+                "solving it, the host is serving a manual CAPTCHA that no bypasser can "
+                "answer - try again shortly. Otherwise check that the bypasser is "
+                "reachable and working."
             )
             raise SearchUnavailableError(msg)
-        if _looks_like_aa_page(html):
-            # A real AA response in a shape the caller should report as drift.
-            # Not the mirror's fault.
-            return html, None
 
         new_base, action = selector.next_mirror_or_rotate_dns(
             fatal=True, reason="responded without an Anna's Archive page"
@@ -747,8 +900,10 @@ def get_book_info(book_id: str, *, fetch_download_count: bool = True) -> BrowseR
     html = downloader.html_get_page(url, selector=selector, allow_bypasser_fallback=True)
 
     if not html:
-        msg = "Unable to reach download source. Network restricted or mirrors are blocked."
-        raise SearchUnavailableError(msg)
+        detail = getattr(selector, "last_failure", None) or (
+            "Network restricted or mirrors are blocked."
+        )
+        raise SearchUnavailableError(f"Unable to reach download source. {detail}")
 
     soup = BeautifulSoup(_html_response_text(html), "html.parser")
 
@@ -1903,6 +2058,22 @@ class DirectDownloadSource(ReleaseSource):
     ) -> list[Release]:
         """Search for releases using the book's metadata.
 
+        The whole fan-out runs under one page cache, so a URL built twice by different
+        passes is fetched once. See `_search_page_reuse`.
+        """
+        with _search_page_reuse():
+            return self._search(book, plan, expand_search=expand_search, content_type=content_type)
+
+    def _search(
+        self,
+        book: BookMetadata,
+        plan: ReleaseSearchPlan,
+        *,
+        expand_search: bool = False,
+        content_type: str = "ebook",
+    ) -> list[Release]:
+        """Search for releases using the book's metadata.
+
         Priority: ISBN search first (most precise), then title+author fallback.
         For non-English languages, uses localized titles from book.titles_by_language.
 
@@ -1967,6 +2138,12 @@ class DirectDownloadSource(ReleaseSource):
             query = f"{title} {author}".strip()
             if not query:
                 continue
+            # `except Exception` below keeps this loop going past a failed variant, which
+            # is right for a parse error and wrong for a spent budget: without this the
+            # variants queue up behind each other and the request outlives the caller.
+            if search_deadline.expired():
+                logger.info("Release search budget spent; skipping remaining title variants")
+                break
 
             logger.debug("Searching direct_download: title_author='%s', langs=%s", query, langs)
             filters = SearchFilters(lang=langs if langs is not None else [])
@@ -1980,7 +2157,11 @@ class DirectDownloadSource(ReleaseSource):
             except Exception:
                 logger.exception("Search error")
 
-        if not all_results and any(langs for _, langs in searches):
+        if (
+            not all_results
+            and any(langs for _, langs in searches)
+            and not search_deadline.expired()
+        ):
             logger.debug(
                 "No title+author results with language filter, retrying without language filter"
             )
@@ -1988,6 +2169,9 @@ class DirectDownloadSource(ReleaseSource):
                 query = f"{title} {author}".strip()
                 if not query:
                     continue
+                if search_deadline.expired():
+                    logger.info("Release search budget spent; skipping remaining retries")
+                    break
 
                 logger.debug("Searching direct_download: title_author='%s', langs=[]", query)
                 try:

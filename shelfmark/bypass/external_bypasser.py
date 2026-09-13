@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from shelfmark.bypass import BypassCancelledError
+from shelfmark.bypass import BypassCancelledError, ChallengeNotSolvedError
+from shelfmark.bypass.challenge import challenge_marker
 from shelfmark.bypass.cookie_store import store_extracted_cookies
 from shelfmark.core.config import config
 from shelfmark.core.logger import setup_logger
@@ -164,7 +165,13 @@ def _store_solution_clearance(target_url: str, solution: Mapping[str, Any]) -> N
 
 
 def _fetch_via_bypasser(target_url: str) -> str | None:
-    """Make a single request to the external bypasser service. Returns HTML or None."""
+    """Make a single request to the external bypasser service. Returns HTML or None.
+
+    Raises:
+        ChallengeNotSolvedError: the service answered with a page that is still a
+            challenge, whatever verdict it reported on itself.
+
+    """
     raw_bypasser_url = _coerce_config_str(
         config.get("EXT_BYPASSER_URL", "http://flaresolverr:8191"),
         "http://flaresolverr:8191",
@@ -216,6 +223,32 @@ def _fetch_via_bypasser(target_url: str) -> str | None:
             logger.warning("External bypasser returned empty response for '%s'", target_url)
             return None
 
+        # "Challenge solved!" is the solver's verdict on its own work, and #1289 showed
+        # it can be reported alongside a page the caller then rejects. Say what actually
+        # came back, so a later report does not have to infer it from downstream errors.
+        marker = challenge_marker(html)
+        logger.debug(
+            "External bypasser page for '%s': %d bytes, challenge_marker=%r",
+            target_url,
+            len(html),
+            marker,
+        )
+        if marker:
+            # The solver's verdict is not evidence; the page is. Returning this one as a
+            # success is what made #1292 unrecoverable: the retry-and-rotate loop that
+            # could still have saved the search - the next mirror is a different
+            # DDoS-Guard host, in its own state - was never entered, and the challenge
+            # page's own __ddg cookies were filed as this host's clearance and replayed
+            # on every later request.
+            logger.warning(
+                "External bypasser reported success but returned a challenge page for "
+                "'%s' (%d bytes, marker=%r) - the solve did not clear the protection",
+                target_url,
+                len(html),
+                marker,
+            )
+            raise ChallengeNotSolvedError(marker)
+
         try:
             _store_solution_clearance(target_url, solution)
         except AttributeError, KeyError, TypeError, ValueError:
@@ -265,16 +298,33 @@ def get_bypassed_page(
     selector: network.AAMirrorSelector | None = None,
     cancel_flag: Event | None = None,
 ) -> str | None:
-    """Fetch HTML via external bypasser with retries and mirror rotation."""
+    """Fetch HTML via external bypasser with retries and mirror rotation.
+
+    Raises:
+        ChallengeNotSolvedError: every attempt came back still carrying a challenge.
+            Reported apart from returning None because the two ask the user for
+            opposite things: None means go and check the bypasser, this means the
+            bypasser is fine and the host is the one refusing.
+        BypassCancelledError: the caller's cancel flag was set.
+
+    """
     from shelfmark.download import network as network_module
 
     sel = selector or network_module.AAMirrorSelector()
+    unsolved_marker: str | None = None
 
     for attempt in range(1, MAX_RETRY + 1):
         _check_cancelled(cancel_flag, "by user")
 
         attempt_url = sel.rewrite(url)
-        result = _fetch_via_bypasser(attempt_url)
+        try:
+            result = _fetch_via_bypasser(attempt_url)
+        except ChallengeNotSolvedError as e:
+            # Worth the remaining attempts rather than an immediate give-up: the retry
+            # rotates onto the next mirror, and that is a different DDoS-Guard host with
+            # its own idea of whether this caller needs a CAPTCHA.
+            unsolved_marker = str(e) or unsolved_marker
+            result = None
         if result:
             return result
 
@@ -295,4 +345,11 @@ def get_bypassed_page(
         if action in ("mirror", "dns") and new_base:
             logger.info("Rotated %s for retry", action)
 
+    if unsolved_marker:
+        msg = (
+            "The bypasser ran, but the site kept answering with a protection challenge "
+            f"(marker={unsolved_marker!r}). That is usually a manual CAPTCHA, which no "
+            "bypasser can answer - the bypasser itself is working. Try again shortly."
+        )
+        raise ChallengeNotSolvedError(msg)
     return None

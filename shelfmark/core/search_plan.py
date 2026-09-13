@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from shelfmark.core.config import config
+from shelfmark.core.logger import setup_logger
 from shelfmark.metadata_providers import (
     BookMetadata,
     build_localized_search_titles,
@@ -15,6 +16,8 @@ from shelfmark.metadata_providers import (
 
 if TYPE_CHECKING:
     from shelfmark.core.models import SearchFilters
+
+logger = setup_logger(__name__)
 
 MANUAL_QUERY_MAX_LEN = 256
 
@@ -52,44 +55,110 @@ class ReleaseSearchPlan:
         return self.title_variants[0].query if self.title_variants else ""
 
 
-def _normalize_languages(languages: list[str] | None) -> list[str] | None:
+def _to_language_codes(values: Iterable[object], *, source: str) -> list[str] | None:
+    """Resolve any spelling of a language to the ISO code the sources expect.
+
+    Anna's Archive matches `lang=` against ISO codes: `lang=english` is not a loose
+    spelling of `lang=en`, it is a facet value AA does not have, and it filters every
+    search down to nothing. Only the *per-user* override was normalised
+    (config.users_settings.validate), so a global BOOK_LANGUAGE=english - the spelling
+    the old docs used - reached the query verbatim and silently emptied every search
+    with no error anywhere. See issue #1276.
+
+    An entry that resolves to nothing is dropped with a warning rather than passed
+    through: searching unfiltered and saying so beats reporting "no results" for a book
+    the source is full of.
+    """
+    from shelfmark.core.languages import normalize_language
+
+    codes: list[str] = []
+    unresolved: list[str] = []
+    for value in values:
+        text = str(value).strip() if value is not None else ""
+        if not text:
+            continue
+        if text.lower() == "all":
+            # An explicit "search every language", not a language.
+            return None
+        code = normalize_language(text)
+        if code is None:
+            unresolved.append(text)
+            continue
+        if code not in codes:
+            codes.append(code)
+
+    if unresolved:
+        logger.warning(
+            "Ignoring unrecognised language(s) in %s: %s. Use an ISO code such as 'en', "
+            "a three-letter code, or an English name like 'English'.",
+            source,
+            ", ".join(unresolved),
+        )
+
+    return codes or None
+
+
+def _normalize_languages(languages: list[str] | None, user_id: int | None) -> list[str] | None:
     if not languages:
-        default = getattr(config, "BOOK_LANGUAGE", None)
+        default = config.get("BOOK_LANGUAGE", None, user_id=user_id)
         if isinstance(default, str):
             default_values: list[object] = [default]
         elif isinstance(default, Iterable) and not isinstance(default, (bytes, bytearray, dict)):
             default_values = list(default)
         else:
             return None
-        return [str(lang).strip() for lang in default_values if str(lang).strip()]
+        return _to_language_codes(default_values, source="BOOK_LANGUAGE")
 
-    normalized: list[str] = []
-    for lang in languages:
-        if not lang:
-            continue
-        s = str(lang).strip()
-        if not s:
-            continue
-        normalized.append(s)
-
-    if any(lang.lower() == "all" for lang in normalized):
-        return None
-
-    return normalized or None
+    return _to_language_codes(languages, source="the search request")
 
 
-def _pick_search_author(book: BookMetadata) -> str:
+def first_author(value: str) -> str:
+    """The first name in a possibly comma-joined author string.
+
+    Both ends of the app hand us every contributor in one string. The frontend joins
+    `authors` with ", " for display (`bookTransformers.ts`) and that display string comes
+    straight back as the `author` request parameter, while several providers set
+    `search_author` from the same joined text. Searching a release source for
+    "Blindness Jose Saramago, Giovanni Pontiero, ..." - the author plus two translators -
+    matches nothing, and the user is told the book has no releases at all.
+
+    A "Last, First" author collapses to the surname, which is still a usable search term
+    and is what the authors[] fallback has always done with the same input. See #1252.
+    """
+    first, _, _ = value.partition(",")
+    return first.strip()
+
+
+def pick_search_author(book: BookMetadata) -> str:
+    """The one author a release query should carry, from whichever field holds one.
+
+    Every release source that builds its own query wants exactly this, so it lives here
+    rather than being re-derived per source - the two branches below drifted apart once
+    already (#1252) and the IRC source carried a third copy of the same preference.
+
+    #1290 fixed the same report by merging the two branches and trimming whichever one
+    won; this keeps that outcome ("Blindness Jose Saramago" from either field, measured
+    there at 0 releases before and 49 after) and adds the empty-narrowing fallback, so a
+    credit list that merely starts with a blank entry does not fall out to title-only.
+    """
+    # Narrowing can come back empty - the joined string starts with a comma because the
+    # first contributor was blank, and `authors.join(', ')` does not drop the empty entry.
+    # Falling through to authors[] then still finds a usable name; returning "" would
+    # search by title alone and lose the author we were holding all along.
     if book.search_author:
-        return book.search_author
+        narrowed = first_author(book.search_author)
+        if narrowed:
+            return narrowed
 
-    if not book.authors:
-        return ""
+    # A bare string here would otherwise be iterated one character at a time; the IRC
+    # source guarded against exactly that before it shared this helper.
+    authors = book.authors if isinstance(book.authors, list) else [book.authors or ""]
+    for author in authors:
+        narrowed = first_author(author or "")
+        if narrowed:
+            return narrowed
 
-    first = book.authors[0]
-    if "," in first:
-        first = first.split(",")[0].strip()
-
-    return first
+    return ""
 
 
 def _pick_search_title(book: BookMetadata) -> str:
@@ -102,15 +171,21 @@ def build_release_search_plan(
     manual_query: str | None = None,
     indexers: list[str] | None = None,
     source_filters: SearchFilters | None = None,
+    user_id: int | None = None,
 ) -> ReleaseSearchPlan:
-    """Build normalized search variants shared across release sources."""
-    resolved_languages = _normalize_languages(languages)
+    """Build normalized search variants shared across release sources.
+
+    ``user_id`` picks up that user's default languages when the caller does not
+    filter explicitly, so a search started without a language filter uses the
+    reader's own default rather than the instance-wide one.
+    """
+    resolved_languages = _normalize_languages(languages, user_id)
 
     resolved_manual_query = None
     if manual_query:
         resolved_manual_query = manual_query.strip()[:MANUAL_QUERY_MAX_LEN] or None
 
-    author = _pick_search_author(book)
+    author = pick_search_author(book)
     base_title = _pick_search_title(book)
 
     if resolved_manual_query:

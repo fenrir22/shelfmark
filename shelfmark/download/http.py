@@ -5,13 +5,15 @@ import time
 from http import HTTPStatus
 from io import BytesIO
 from typing import TYPE_CHECKING, NoReturn
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from tqdm import tqdm
 
-from shelfmark.bypass import BypassCancelledError, cookie_store
+from shelfmark.bypass import BypassCancelledError, ChallengeNotSolvedError, cookie_store
 from shelfmark.bypass.challenge import challenge_marker
+from shelfmark.bypass.waiting_room import WaitingRoomTimeoutError, is_aa_waiting_room
+from shelfmark.core import search_deadline
 from shelfmark.core.config import config as app_config
 from shelfmark.core.logger import setup_logger
 from shelfmark.core.request_helpers import coerce_bool, normalize_positive_int
@@ -28,6 +30,10 @@ logger = setup_logger(__name__)
 _RNG = random.SystemRandom()
 
 _MAX_REDIRECTS = 5
+# DDoS-Guard's re-check probe. Its 302 to `?check=1` is one hop of a handshake rather
+# than a page: the parameter asserts the caller already holds the cookies that hop
+# issued.
+_DDG_CHECK_PARAM = "check"
 # Z-Library answers the first hit with a 503 whose only real payload is a Set-Cookie; echoing
 # that cookie back returns the 302 to the real page. Two attempts cover the handshake without
 # letting a server that keeps re-issuing cookies hold us in the loop.
@@ -47,11 +53,13 @@ _BYPASS_GRACE_SLACK_SECONDS = 30.0
 _BYPASSER_ERRORS = (
     AttributeError,
     BypassCancelledError,
+    ChallengeNotSolvedError,
     KeyError,
     OSError,
     RuntimeError,
     TypeError,
     ValueError,
+    network.RateLimitedError,
     requests.exceptions.RequestException,
 )
 
@@ -250,6 +258,33 @@ def _response_challenge_marker(response: requests.Response) -> str | None:
         return None
 
 
+def _solvable_url(url: str) -> str:
+    """The URL a solver should open, given one we may be mid-handshake on.
+
+    The manual AA redirect follower in `html_get_page` walks DDoS-Guard's handshake by
+    reassigning `current_url`, so by the time a 403, a 503 challenge or a redirect loop
+    hands that URL to a bypasser it is often the `?check=1` probe rather than the page
+    we actually wanted. A solver opens it in a fresh browser holding none of the cookies
+    the probe exists to collect, so DDoS-Guard cannot verify it automatically and answers
+    with the manual CAPTCHA page that nothing can solve - the failure in #1292, where
+    FlareSolverr reported "Challenge solved!" over a 4.7 KB DDOS-GUARD interstitial.
+
+    Handing over the pre-probe URL instead lets the solver's browser run the whole
+    handshake itself, which is what a real browser does and what the solver is for.
+
+    Scoped to the hosts whose redirects we follow manually: everywhere else `check` is
+    an ordinary query parameter and none of our business.
+    """
+    if not network.should_rotate_dns_for_url(url):
+        return url
+    parsed = urlparse(url)
+    params = parse_qsl(parsed.query, keep_blank_values=True)
+    kept = [(key, value) for key, value in params if key != _DDG_CHECK_PARAM]
+    if len(kept) == len(params):
+        return url
+    return urlunparse(parsed._replace(query=urlencode(kept)))
+
+
 def _fatal_mirror_reason(e: Exception) -> str | None:
     """Return why ``e`` proves the mirror is unusable, or None if it may recover.
 
@@ -333,10 +368,33 @@ def html_get_page(
 
     """
 
+    # Normalise before the closures below capture it: they touch selector.last_failure,
+    # so it must be a concrete selector, not the Optional parameter.
+    selector = selector or network.AAMirrorSelector()
+
+    # A release search runs under a wall-clock budget (see shelfmark.core.search_deadline).
+    # Adopting it as the cancel flag is what makes the budget bite on a solve already in
+    # flight: the bypassers and the helper subprocess poll this flag but know nothing about
+    # deadlines. Only when the caller has no flag of its own - a queued download brings one
+    # and must keep it, and runs outside any search context anyway.
+    if cancel_flag is None:
+        cancel_flag = search_deadline.cancel_event()
+
     def _result(html: str, response_url: str) -> str | tuple[str, str]:
         if include_response_url:
             return html, response_url
         return html
+
+    def _fail(reason: str, response_url: str) -> str | tuple[str, str]:
+        """Record why the fetch is giving up, then return the empty result.
+
+        Every give-up path returns an empty page, which is all the caller used to
+        see. Stashing the concrete reason on the shared selector lets the caller
+        surface it (see release_sources.direct_download) rather than reporting the
+        same generic "network restricted or mirrors blocked" for every cause.
+        """
+        selector.last_failure = reason
+        return _result("", response_url)
 
     def _run_bypasser(bypass_url: str) -> str | tuple[str, str]:
         """Run the active bypasser for one URL and return its result.
@@ -346,6 +404,16 @@ def html_get_page(
         retry-loop branch above with `continue`, and with MAX_RETRY=1 there is no
         later attempt for that branch to run on either.
         """
+        # Every handoff reaches the solver through here, so this is the one place the
+        # mid-handshake `?check=1` URL has to be unwound. See _solvable_url.
+        bypass_url = _solvable_url(bypass_url)
+        # Never start a minutes-long browser solve on a budget that has already run out:
+        # nothing downstream would get to report the real reason before the caller's
+        # deadline (or its reverse proxy) cut the request off.
+        if search_deadline.expired():
+            logger.info("Release search budget spent; not starting a bypass for %s", bypass_url)
+            return _fail(search_deadline.deadline_message(), bypass_url)
+
         if status_callback:
             status_callback("resolving", "Bypassing protection...")
         try:
@@ -355,7 +423,39 @@ def html_get_page(
             # bypasser that fails to load is still reported as a bypasser error.
             request_activity_grace(status_callback, _bypass_grace_seconds())
             result = get_bypassed_page(bypass_url, selector, cancel_flag)
-            return _result(result or "", bypass_url)
+            if result:
+                return _result(result, bypass_url)
+            return _fail(
+                "The protection bypasser returned an empty page — the challenge was "
+                "not solved. Check that FlareSolverr/the CF bypasser is reachable.",
+                bypass_url,
+            )
+        except network.RateLimitedError as e:
+            # Not a bypasser malfunction: the host is throttling this IP and a solve
+            # cannot help. Surface the wait as a plain failure so the search ends cleanly
+            # instead of looping another minutes-long solve against a 429.
+            logger.info("Skipping bypass (rate-limited): %s", e)
+            if status_callback:
+                try:
+                    status_callback("resolving", "Rate limited, try again shortly")
+                except _STATUS_CALLBACK_ERRORS:
+                    logger.debug("Rate-limit status callback failed", exc_info=True)
+            return _fail(str(e), bypass_url)
+        except WaitingRoomTimeoutError as e:
+            logger.info("Waiting room timed out: %s", e)
+            return _fail(str(e), bypass_url)
+        except ChallengeNotSolvedError as e:
+            # Not a bypasser malfunction: it ran, and the host answered with something it
+            # cannot clear - DDoS-Guard's manual CAPTCHA, typically. Must precede the
+            # generic handler below, whose "the protection bypasser failed" is what sent
+            # #1292 off to fix a FlareSolverr that was working perfectly.
+            logger.info("Bypass ran but did not clear the protection: %s", e)
+            if status_callback:
+                try:
+                    status_callback("error", str(e))
+                except _STATUS_CALLBACK_ERRORS:
+                    logger.debug("Unsolved-challenge status callback failed", exc_info=True)
+            return _fail(str(e), bypass_url)
         except _BYPASSER_ERRORS as e:
             logger.warning("Bypasser error: %s: %s", type(e).__name__, e)
             # Surface the real reason. Without this the caller only sees an empty
@@ -366,7 +466,13 @@ def html_get_page(
                     status_callback("error", f"Bypass failed: {type(e).__name__}: {e}")
                 except _STATUS_CALLBACK_ERRORS:
                     logger.debug("Bypass error status callback failed", exc_info=True)
-            return _result("", bypass_url)
+            if isinstance(e, BypassCancelledError):
+                # The budget trips the same cancel flag a user's cancel does, so tell them
+                # apart here - "cancelled" is a confusing thing to read when nobody did.
+                if search_deadline.expired():
+                    return _fail(search_deadline.deadline_message(), bypass_url)
+                return _fail("The protection bypass was cancelled.", bypass_url)
+            return _fail(f"The protection bypasser failed: {type(e).__name__}: {e}", bypass_url)
         finally:
             release_activity_grace(status_callback)
 
@@ -408,19 +514,24 @@ def html_get_page(
     retry_limit = (
         retry if retry is not None else (configured_retry if configured_retry is not None else 1)
     )
-    selector = selector or network.AAMirrorSelector()
     original_url = url
     current_url = selector.rewrite(original_url)
     use_bypasser_now = use_bypasser
     # Survives across attempts so a cookie won once is still presented on later retries.
     handshake_cookies: dict[str, str] = {}
     handshake_retries = 0
+    # Last transport error seen, so the exhausted-retries path can name the real
+    # cause (timeout, connection refused, DNS, ...) instead of a generic message.
+    last_error: Exception | None = None
 
     for attempt in range(1, retry_limit + 1):
         # Check for cancellation before each attempt
         if cancel_flag and cancel_flag.is_set():
+            if search_deadline.expired():
+                logger.info("Release search budget spent before attempt %s", attempt)
+                return _fail(search_deadline.deadline_message(), current_url)
             logger.info("html_get_page cancelled before attempt %s", attempt)
-            return _result("", current_url)
+            return _fail("The request was cancelled.", current_url)
 
         cookies: dict[str, str] = {}
         try:
@@ -447,8 +558,15 @@ def html_get_page(
                     current_url,
                     proxies=get_proxies(current_url),
                     timeout=REQUEST_TIMEOUT,
-                    # Bypasser-derived cookies win: they came from a real solved challenge.
-                    cookies={**handshake_cookies, **cookies},
+                    # Handshake cookies win. They were issued by *this* exchange, so by
+                    # definition they are fresher than anything the store holds, and the
+                    # server is waiting to see them echoed back on the very next hop.
+                    # Letting the store overwrite them meant a stored cookie of the same
+                    # name (DDoS-Guard reuses __ddg1_/__ddg2_ for both) was replayed on
+                    # every hop and the freshly issued value never left this process - the
+                    # ?check=1 probe could then never terminate, so every request ended in
+                    # the redirect-loop handoff and paid for a full browser solve.
+                    cookies={**cookies, **handshake_cookies},
                     headers=headers,
                     allow_redirects=allow_redirects,
                     verify=get_ssl_verify(current_url),
@@ -522,7 +640,12 @@ def html_get_page(
                                 redirect_host,
                                 current_url,
                             )
-                            return _result("", current_url)
+                            return _fail(
+                                f"The configured mirror {current_host} redirected to "
+                                f"{redirect_host}; it may be down or seized. Point MIRROR at "
+                                "a working host or switch to auto mode.",
+                                current_url,
+                            )
 
                         new_url = _try_rotation(original_url, current_url, selector)
                         if new_url:
@@ -541,7 +664,11 @@ def html_get_page(
                             redirect_host,
                             current_url,
                         )
-                        return _result("", current_url)
+                        return _fail(
+                            "Every Anna's Archive mirror redirected away to a dead host — "
+                            "all configured mirrors are unreachable.",
+                            current_url,
+                        )
 
                     # Same-host redirect (relative or absolute) - follow manually.
                     # DDoS-Guard gates AA /search behind a cookie probe: the 302 to
@@ -572,16 +699,30 @@ def html_get_page(
                         logger.warning(
                             "Redirect loop and no bypasser available, giving up: %s", current_url
                         )
-                        return _result("", current_url)
+                        return _fail(
+                            "Anna's Archive is behind a protection challenge (endless "
+                            "redirect loop) and no bypasser is enabled to solve it. Enable "
+                            "FlareSolverr/the CF bypasser.",
+                            current_url,
+                        )
                     current_url = redirect_url
                     continue
 
                 response.raise_for_status()
+                if (
+                    _bypass_handoff_allowed()
+                    and not _is_using_external_bypasser()
+                    and is_aa_waiting_room(current_url, response.text)
+                ):
+                    # A successful HTTP response can still need a live browser: the
+                    # queue's JavaScript must finish in the session that entered it.
+                    return _run_bypasser(current_url)
                 if success_delay > 0:
                     time.sleep(success_delay)
                 return _result(response.text, response.url)
 
         except Exception as e:
+            last_error = e
             status = _get_status_code(e)
 
             # The same DDoS-Guard rescue, for the loops the manual AA follower above hands
@@ -608,7 +749,10 @@ def html_get_page(
                         current_url = new_url
                         continue
                     logger.warning("403 error, mirrors exhausted: %s", current_url)
-                    return _result("", current_url)
+                    return _fail(
+                        "Anna's Archive returned 403 (blocked) and all mirrors are exhausted.",
+                        current_url,
+                    )
 
                 if _is_cf_bypass_enabled() and not use_bypasser_now:
                     # Before switching to bypasser, check if cookies have become available
@@ -642,12 +786,24 @@ def html_get_page(
                     # Same reasoning as the redirect-loop handoffs.
                     return _run_bypasser(current_url)
                 logger.warning("403 error, giving up: %s", current_url)
-                return _result("", current_url)
+                return _fail(
+                    "Anna's Archive returned 403 (blocked) and no bypasser is enabled "
+                    "to solve the protection challenge.",
+                    current_url,
+                )
 
             # 404 = Not found
             if status == _HTTP_STATUS_NOT_FOUND:
                 logger.warning("404 error: %s", current_url)
-                return _result("", current_url)
+                return _fail(
+                    f"Anna's Archive returned 404 Not Found for {current_url}.", current_url
+                )
+
+            # 429 = origin throttling this IP. Arm the per-host backoff so selection and
+            # the bypasser stop hammering it, then fall through to normal rotation onto a
+            # mirror that is not (yet) rate-limited.
+            if status == _HTTP_STATUS_RATE_LIMITED:
+                network.note_rate_limited(current_url)
 
             # Try mirror/DNS rotation on retryable errors. A failure that proves the
             # mirror is unusable also drops it from this process's rotation, so the
@@ -676,7 +832,16 @@ def html_get_page(
             else:
                 logger.exception("Giving up after %s attempts: %s", retry_limit, current_url)
 
-    return _result("", current_url)
+    if last_error is not None:
+        return _fail(
+            f"Could not reach Anna's Archive after {retry_limit} attempt(s): "
+            f"{type(last_error).__name__}: {last_error}",
+            current_url,
+        )
+    return _fail(
+        "Could not reach Anna's Archive — all mirrors were exhausted without a usable response.",
+        current_url,
+    )
 
 
 def download_url(
@@ -793,6 +958,7 @@ def download_url(
             # Rate limited - skip to next source immediately
             # (waiting doesn't help with concurrent downloads hitting the same server)
             if status == _HTTP_STATUS_RATE_LIMITED:
+                network.note_rate_limited(current_url)
                 logger.info("Rate limited (429) - trying next source")
                 if status_callback:
                     status_callback("resolving", "Server busy, trying next")

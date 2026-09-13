@@ -45,6 +45,10 @@ _HASH_LENGTH_ED2K = 32
 _HTTP_STATUS_FORBIDDEN = HTTPStatus.FORBIDDEN
 _HTTP_STATUS_NOT_FOUND = HTTPStatus.NOT_FOUND
 _METADATA_DOWNLOAD_STATES = {"forcedMetaDL", "metaDL"}
+# How long add_download waits for magnet metadata before falling back to the info
+# hash it already knows, rather than holding the download queue on a thin swarm.
+_METADATA_WAIT_POLLS = 20
+_METADATA_WAIT_INTERVAL_SECONDS = 0.5
 _ONE_WEEK_IN_SECONDS = 604800
 
 
@@ -221,6 +225,9 @@ class QBittorrentClient(DownloadClient):
         self._category = config_text(config.get("QBITTORRENT_CATEGORY", "books"))
         self._download_dir = config_text(config.get("QBITTORRENT_DOWNLOAD_DIR", ""))
         self._tags = _normalize_tags(config.get("QBITTORRENT_TAG", []))
+        # download_id -> qBittorrent's current primary hash, for identities that no
+        # longer match it directly. See _resolve_torrent().
+        self._primary_hashes: dict[str, str] = {}
 
     @property
     def _can_reauthenticate(self) -> bool:
@@ -307,13 +314,31 @@ class QBittorrentClient(DownloadClient):
         params = {"category": category} if category else {}
         return self._request_torrent_info_records(params)
 
+    def _remember_primary_hash(self, download_id: str, torrent: SimpleNamespace) -> None:
+        """Note the primary hash a listing scan found, so later lookups skip the scan."""
+        torrent_hash = getattr(torrent, "hash", None)
+        if isinstance(torrent_hash, str) and torrent_hash:
+            self._primary_hashes[download_id.lower()] = torrent_hash.lower()
+
     def _resolve_torrent(
         self, download_id: str, category: str | None = None
     ) -> tuple[SimpleNamespace | None, str | None]:
-        """Resolve any known torrent identity to its current qBittorrent record."""
-        torrent, error = self._get_torrent_info(download_id)
-        if error or torrent:
-            return torrent, error
+        """Resolve any known torrent identity to its current qBittorrent record.
+
+        A hybrid torrent's primary hash switches from the v1 hash to the truncated v2
+        hash once metadata resolves, so a download tracked by its v1 hash misses the
+        `hashes=` lookup and falls through to a full listing. Since `get_status()`
+        polls every couple of seconds for the life of the download, remember the
+        primary hash a scan finds and try it first.
+        """
+        cached = self._primary_hashes.get(download_id.lower())
+        for candidate in (item for item in dict.fromkeys((cached, download_id)) if item):
+            torrent, error = self._get_torrent_info(candidate)
+            if error:
+                return None, error
+            if torrent:
+                self._remember_primary_hash(download_id, torrent)
+                return torrent, None
 
         categories = [candidate for candidate in (category, self._category) if candidate]
         for candidate in dict.fromkeys(categories):
@@ -325,18 +350,41 @@ class QBittorrentClient(DownloadClient):
                 None,
             )
             if torrent:
+                self._remember_primary_hash(download_id, torrent)
                 return torrent, None
 
         torrents, error = self._list_torrents_by_category(None)
         if error:
             return None, error
-        return (
-            next(
-                (item for item in torrents if _torrent_matches_download_id(item, download_id)),
-                None,
-            ),
+        torrent = next(
+            (item for item in torrents if _torrent_matches_download_id(item, download_id)),
             None,
         )
+        if torrent:
+            self._remember_primary_hash(download_id, torrent)
+        else:
+            # The torrent is gone; drop the note so a re-add is not looked up by a
+            # hash that no longer exists.
+            self._primary_hashes.pop(download_id.lower(), None)
+        return torrent, None
+
+    def _current_hash(self, download_id: str) -> str:
+        """qBittorrent's current primary hash for any identity we know the torrent by.
+
+        Falls back to the given ID when the torrent cannot be found, so callers
+        still address the hash they were handed and surface the client's error.
+        """
+        try:
+            torrent, error = self._resolve_torrent(download_id)
+        except _QBITTORRENT_CLIENT_ERRORS as e:
+            logger.debug("Could not resolve current hash for %s: %s", download_id, e)
+            return download_id
+        if error or not torrent:
+            return download_id
+        torrent_hash = getattr(torrent, "hash", None)
+        if isinstance(torrent_hash, str) and torrent_hash:
+            return torrent_hash
+        return download_id
 
     def _list_category_hashes(self, category: str | None) -> set[str] | None:
         """Snapshot the hashes qBittorrent currently reports for a category."""
@@ -495,9 +543,13 @@ class QBittorrentClient(DownloadClient):
                     message = f"{message} (torrent file fetch failed: {torrent_info.fetch_error})"
                 _raise_runtime_error(message)
 
-            # Wait until qBittorrent has resolved magnet metadata so the returned
-            # hash is its stable primary torrent ID, which may differ from the v1 hash.
-            for _ in range(20):
+            # Prefer qBittorrent's primary torrent ID, which for hybrid torrents
+            # switches from the v1 hash to the truncated v2 hash once metadata
+            # resolves. A magnet with few peers can take minutes to fetch metadata,
+            # and the torrent is worth keeping in the meantime: every lookup goes
+            # through `_resolve_torrent`, which still matches the v1 hash against
+            # `infohash_v1` after the primary ID has changed.
+            for _ in range(_METADATA_WAIT_POLLS):
                 torrent, error = self._resolve_torrent(expected_hash, category)
                 if error:
                     logger.debug("qBittorrent add_download: %s", error)
@@ -506,17 +558,18 @@ class QBittorrentClient(DownloadClient):
                     if isinstance(torrent_hash, str) and torrent_hash:
                         logger.info("Added torrent: %s", torrent_hash)
                         return torrent_hash.lower()
-                time.sleep(0.5)
+                time.sleep(_METADATA_WAIT_INTERVAL_SECONDS)
 
-            _raise_runtime_error(
-                "Torrent metadata resolution was not confirmed within the visibility grace period "
-                f"(response={result_text})"
+            logger.info(
+                "Added torrent %s; metadata still pending after %.0fs, tracking it by info hash",
+                expected_hash,
+                _METADATA_WAIT_POLLS * _METADATA_WAIT_INTERVAL_SECONDS,
             )
         except _QBITTORRENT_CLIENT_ERRORS:
             logger.exception("qBittorrent add failed")
             raise
         else:
-            return expected_hash
+            return expected_hash.lower()
 
     def get_status(self, download_id: str) -> DownloadStatus:
         """Get torrent status by hash.
@@ -529,7 +582,7 @@ class QBittorrentClient(DownloadClient):
 
         """
         try:
-            torrent, error = self._get_torrent_info(download_id)
+            torrent, error = self._resolve_torrent(download_id)
             if error:
                 return DownloadStatus.error(error)
             if not torrent:
@@ -613,7 +666,9 @@ class QBittorrentClient(DownloadClient):
 
         """
         try:
-            self._client.torrents_delete(torrent_hashes=download_id, delete_files=delete_files)
+            torrent_hash = self._current_hash(download_id)
+            self._client.torrents_delete(torrent_hashes=torrent_hash, delete_files=delete_files)
+            self._primary_hashes.pop(download_id.lower(), None)
             logger.info(
                 "Removed torrent from qBittorrent: %s%s",
                 download_id,
@@ -635,7 +690,7 @@ class QBittorrentClient(DownloadClient):
                     logger.debug("Could not create category '%s': %s", category, e)
 
             self._client.torrents_set_category(
-                torrent_hashes=download_id,
+                torrent_hashes=self._current_hash(download_id),
                 category=category,
             )
             logger.info("Set qBittorrent category for %s to '%s'", download_id, category)
@@ -657,7 +712,7 @@ class QBittorrentClient(DownloadClient):
         - join `save_path` with the torrent's top-level directory
         """
         try:
-            torrent, error = self._get_torrent_info(download_id)
+            torrent, error = self._resolve_torrent(download_id)
             if error:
                 logger.debug("qBittorrent get_download_path: %s", error)
                 return None
@@ -758,6 +813,33 @@ class QBittorrentClient(DownloadClient):
             )
             return None
 
+    def _await_existing_torrent(
+        self, info_hash: str, category: str | None
+    ) -> tuple[str, DownloadStatus] | None:
+        """Report a torrent already in qBittorrent, waiting out magnet metadata first."""
+        for _ in range(_METADATA_WAIT_POLLS):
+            torrent, error = self._resolve_torrent(info_hash, category)
+            if error:
+                logger.debug("qBittorrent find_existing: %s", error)
+                return None
+            if not torrent:
+                return None
+            if getattr(torrent, "state", None) not in _METADATA_DOWNLOAD_STATES:
+                torrent_hash = getattr(torrent, "hash", None)
+                if isinstance(torrent_hash, str) and torrent_hash:
+                    torrent_hash = torrent_hash.lower()
+                    return (torrent_hash, self.get_status(torrent_hash))
+            time.sleep(_METADATA_WAIT_INTERVAL_SECONDS)
+
+        # Metadata is still pending, but the torrent is here and `add_download` keeps
+        # one in this state rather than giving up. Report it by info hash so the
+        # caller joins the download in progress instead of adding a duplicate.
+        logger.info(
+            "Existing torrent %s is still fetching metadata; joining it by info hash",
+            info_hash,
+        )
+        return (info_hash.lower(), self.get_status(info_hash))
+
     def find_existing(
         self, url: str, category: str | None = None
     ) -> tuple[str, DownloadStatus] | None:
@@ -767,21 +849,9 @@ class QBittorrentClient(DownloadClient):
             if not torrent_info.info_hash:
                 return None
 
-            for _ in range(20):
-                torrent, error = self._resolve_torrent(torrent_info.info_hash, category)
-                if error:
-                    logger.debug("qBittorrent find_existing: %s", error)
-                    return None
-                if not torrent:
-                    return None
-                if getattr(torrent, "state", None) not in _METADATA_DOWNLOAD_STATES:
-                    torrent_hash = getattr(torrent, "hash", None)
-                    if isinstance(torrent_hash, str) and torrent_hash:
-                        torrent_hash = torrent_hash.lower()
-                        return (torrent_hash, self.get_status(torrent_hash))
-                time.sleep(0.5)
+            existing = self._await_existing_torrent(torrent_info.info_hash, category)
         except _QBITTORRENT_CLIENT_ERRORS as e:
             logger.debug("Error checking for existing torrent: %s", e)
             return None
         else:
-            return None
+            return existing

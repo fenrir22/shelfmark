@@ -37,6 +37,7 @@ from shelfmark.bypass.cookie_store import (
     store_extracted_cookies,
 )
 from shelfmark.bypass.fingerprint import get_screen_size
+from shelfmark.bypass.waiting_room import WaitingRoomTimeoutError, is_aa_waiting_room
 from shelfmark.config import env
 from shelfmark.config.env import LOG_DIR
 from shelfmark.config.settings import RECORDING_DIR
@@ -82,12 +83,29 @@ _HELPER_RESULT_POLL_SECONDS = 0.05
 # what it is doing and exit before its session is killed instead.
 _HELPER_SHUTDOWN_GRACE_SECONDS = 15.0
 _HELPER_IDLE_TIMEOUT_DEFAULT = 180.0
+# How long to wait for a solved page to produce its document before the attempt is
+# abandoned. SeleniumBase's own get_page_source() allows one second; see _read_page_source.
+_PAGE_SOURCE_TIMEOUT_DEFAULT = 20.0
+# Leave time inside the existing browser watchdog for challenge solving and cleanup.
+_AA_WAITING_ROOM_TIMEOUT_SECONDS = 300.0
+_AA_WAITING_ROOM_POLL_SECONDS = 1.0
 _PARENT_WATCHDOG_INTERVAL_SECONDS = 5.0
+# How much of ffmpeg's stderr to quote when reporting that it died.
+_FFMPEG_ERROR_TAIL_CHARS = 500
+
+
+class _WaitingRoomSnapshot(TypedDict):
+    html: str
+    title: str
+    body: str
+    url: str
+    waiting: bool
 
 
 class _DisplayState(TypedDict):
     ffmpeg: subprocess.Popen[bytes] | None
     ffmpeg_output: Path | None
+    ffmpeg_error_log: Path | None
 
 
 class _PageWithWindowRect(Protocol):
@@ -101,6 +119,7 @@ class _BrowserWithWindowRectPage(Protocol):
 DISPLAY: _DisplayState = {
     "ffmpeg": None,
     "ffmpeg_output": None,
+    "ffmpeg_error_log": None,
 }
 LOCKED = threading.Lock()
 _PROC_ROOT = Path("/proc")
@@ -447,6 +466,14 @@ async def _detect_challenge_type(page: Any) -> str:
 async def _is_bypassed(page: Any, *, escape_emojis: bool = True) -> bool:
     """Check if the protection has been bypassed."""
     title, body, current_url = await _get_page_info(page)
+    return _is_bypassed_content(title, body, current_url, escape_emojis=escape_emojis)
+
+
+def _is_bypassed_content(
+    title: str, body: str, current_url: str, *, escape_emojis: bool = True
+) -> bool:
+    """Apply the same protection checks to one consistent page snapshot."""
+    title, body = title.lower(), body.lower()
     body_len = len(body.strip())
 
     # Long page content = probably bypassed
@@ -515,18 +542,6 @@ async def _bypass_method_humanlike(page: Any) -> bool:
         return await _is_bypassed(page)
     except _CDP_OPERATION_ERRORS as e:
         logger.debug("Human-like method failed: %s", e)
-        return False
-
-
-async def _bypass_method_cdp_solve(page: Any) -> bool:
-    """CDP Mode with solve_captcha() - auto-detects challenge type."""
-    try:
-        logger.debug("Attempting bypass: CDP solve_captcha")
-        await page.solve_captcha()
-        await asyncio.sleep(_RNG.uniform(3, 5))
-        return await _is_bypassed(page)
-    except _CDP_OPERATION_ERRORS as e:
-        logger.debug("CDP solve_captcha failed: %s", e)
         return False
 
 
@@ -609,14 +624,38 @@ async def _bypass_method_cdp_gui_click(page: Any) -> bool:
         return False
 
 
+# Ordered cheapest-first, and deliberately without a bare `solve_captcha()` entry:
+# _bypass_method_cdp_gui_click opens by doing exactly that and returns the moment it
+# works, so a separate method ahead of it could only ever repeat the half that had
+# already failed - one wasted round trip plus the backoff before the next attempt, on
+# every solve that gets this far. Measured at ~5.5s of the ~26s each solve cost, and
+# 0/19 successes for the standalone method against DDoS-Guard. See issue #1285.
 BYPASS_METHODS = [
-    _bypass_method_cdp_solve,
     _bypass_method_cdp_gui_click,
     _bypass_method_cdp_click,
     _bypass_method_humanlike,
 ]
 
 MAX_CONSECUTIVE_SAME_CHALLENGE = 3
+
+# How many method attempts one _bypass() pass may make. Deliberately *not* MAX_RETRY:
+# that value is already the outer page-load retry in _run_bypass_in_current_process, and
+# reading it here too squared the budget - the default 10 meant 10 page loads x 4 methods
+# = 40 solve attempts on one browser, which overruns the worker deadline and reports
+# `TimeoutError` instead of a plain "bypass failed". One full pass through the methods
+# plus a spare is all this loop can use anyway: the stuck-challenge guard below aborts at
+# len(BYPASS_METHODS) + 1, so a larger number here only ever showed up in the logs.
+_BYPASS_METHOD_ATTEMPTS = len(BYPASS_METHODS) + 1
+
+# The undisturbed window a passive challenge gets before any method runs. Sized off the
+# real thing: a desktop browser clears Anna's Archive's DDoS-Guard JS check in under 10s.
+_PASSIVE_SOLVE_SECONDS = 15.0
+_PASSIVE_SOLVE_POLL_SECONDS = 1.0
+
+# Head-room the retry loop leaves itself so it can return a real failure rather than be
+# cancelled at the worker deadline. Enough for the pass in flight to unwind and the
+# browser to close.
+_RESERVE_FOR_CLEAN_FAILURE_SECONDS = 60.0
 
 
 def _check_cancellation(cancel_flag: Event | None, message: str) -> None:
@@ -627,13 +666,26 @@ def _check_cancellation(cancel_flag: Event | None, message: str) -> None:
         raise BypassCancelledError(msg)
 
 
+async def _wait_for_passive_solve(page: Any, cancel_flag: Event | None = None) -> bool:
+    """Poll for a challenge that clears itself, without touching the page.
+
+    Returns True as soon as the page looks bypassed, False once the window is spent.
+    """
+    logger.info("Waiting up to %.0fs for the challenge to clear itself...", _PASSIVE_SOLVE_SECONDS)
+    deadline = time.monotonic() + _PASSIVE_SOLVE_SECONDS
+    while time.monotonic() < deadline:
+        _check_cancellation(cancel_flag, "Bypass cancelled while waiting for a passive solve")
+        await asyncio.sleep(_PASSIVE_SOLVE_POLL_SECONDS)
+        if await _is_bypassed(page):
+            return True
+    return False
+
+
 async def _bypass(
     page: Any, max_retries: int | None = None, cancel_flag: Event | None = None
 ) -> bool:
     """Attempt to bypass Cloudflare/DDOS-Guard protection using multiple methods."""
-    max_retries = (
-        max_retries if max_retries is not None else _coerce_positive_int(app_config.MAX_RETRY, 10)
-    )
+    max_retries = max_retries if max_retries is not None else _BYPASS_METHOD_ATTEMPTS
 
     last_challenge_type = None
     consecutive_same_challenge = 0
@@ -650,6 +702,20 @@ async def _bypass(
 
         challenge_type = await _detect_challenge_type(page)
         logger.debug("Challenge detected: %s", challenge_type)
+
+        # Give a passive check the undisturbed window it needs before touching the page.
+        # DDoS-Guard's JS check on Anna's Archive has no click target: it runs, then
+        # navigates on its own - a desktop browser clears it in well under 15s. Every
+        # method below either clicks a selector that is not there or reloads, and a reload
+        # restarts an in-flight check (which DDoS-Guard also throttles), so going straight
+        # to them meant the one thing that actually solves this challenge was the one
+        # thing never tried. Costs one 15s window per solve against a minutes-long budget,
+        # and a challenge that needs interaction simply falls through to the methods.
+        if try_count == 0 and challenge_type != "none":
+            if await _wait_for_passive_solve(page, cancel_flag):
+                logger.info("Bypass successful: %s challenge cleared itself", challenge_type)
+                return True
+            logger.debug("Challenge did not clear on its own; trying bypass methods")
 
         # No challenge detected but page doesn't look bypassed - wait and retry
         if challenge_type == "none":
@@ -769,6 +835,91 @@ def _build_host_resolver_rules() -> list[str]:
 DRIVER_RESET_ERRORS = {"ProtocolException", "RuntimeError", "TimeoutError"}
 
 
+async def _read_page_source(page: Any) -> str:
+    """Read a solved page's HTML, waiting for the document to arrive.
+
+    `get_page_source()` waits one second for the `html` element. A page released from a
+    challenge is often still navigating to the real content, so the read times out even
+    though the solve succeeded: the whole attempt is retried, and the repeated requests
+    are what earn a 429 from a host that was about to serve us.
+    """
+    timeout = _coerce_non_negative_float(
+        app_config.get("BYPASS_PAGE_SOURCE_TIMEOUT", _PAGE_SOURCE_TIMEOUT_DEFAULT),
+        _PAGE_SOURCE_TIMEOUT_DEFAULT,
+    )
+    element = await page.find("html", timeout=timeout)
+    return await element.get_html_async()
+
+
+async def _read_waiting_room_snapshot(
+    page: Any, cancel_flag: Event | None
+) -> _WaitingRoomSnapshot | None:
+    """Read one DOM snapshot while still checking cancellation during a stalled read."""
+    task = asyncio.create_task(
+        page.evaluate("""({
+        html: document.documentElement?.outerHTML || '',
+        title: document.title,
+        body: document.body?.innerText || '',
+        url: location.href,
+        waiting: !!document.querySelector('.js-partner-countdown')
+    })""")
+    )
+    try:
+        while not task.done():
+            _check_cancellation(cancel_flag, "Bypass cancelled in Anna's waiting room")
+            # Keep a slow CDP request alive. Cancelling and reissuing it on every
+            # poll can break the listener when a late response targets a cancelled
+            # SeleniumBase transaction. Cancel only when this browser is unwinding.
+            await asyncio.wait({task}, timeout=_AA_WAITING_ROOM_POLL_SECONDS)
+        _check_cancellation(cancel_flag, "Bypass cancelled in Anna's waiting room")
+        return task.result()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def _wait_for_aa_download_page(
+    page: Any, url: str, html: str, cancel_flag: Event | None = None
+) -> str:
+    """Let the waiting room's own JavaScript countdown and navigation finish.
+
+    Returning the timer HTML closes this incognito browser. Sleeping in the HTTP
+    downloader and fetching again then starts a different session, losing queue state.
+    Keep the original tab alive, including through zero and automatic page reloads.
+    """
+    if not is_aa_waiting_room(url, html):
+        return html
+
+    logger.info("Waiting for Anna's Archive queue in the same browser session...")
+    started = time.monotonic()
+    try:
+        async with asyncio.timeout(_AA_WAITING_ROOM_TIMEOUT_SECONDS):
+            while True:
+                try:
+                    # Read readiness and HTML atomically: navigation between separate
+                    # CDP reads could validate a new page but return an old interstitial.
+                    snapshot = await _read_waiting_room_snapshot(page, cancel_flag)
+                except _CDP_OPERATION_ERRORS:
+                    # A frame/context can disappear during automatic navigation.
+                    snapshot = None
+                if (
+                    snapshot
+                    and not snapshot["waiting"]
+                    and _is_bypassed_content(snapshot["title"], snapshot["body"], snapshot["url"])
+                ):
+                    logger.info(
+                        "Anna's Archive waiting room finished after %.0fs",
+                        time.monotonic() - started,
+                    )
+                    return snapshot["html"]
+                # A zero timer, empty document, or protection page is not completion.
+                await asyncio.sleep(_AA_WAITING_ROOM_POLL_SECONDS)
+    except TimeoutError as exc:
+        raise WaitingRoomTimeoutError(
+            f"Anna's Archive waiting room did not finish within {_AA_WAITING_ROOM_TIMEOUT_SECONDS:g}s"
+        ) from exc
+
+
 async def _get(url: str, driver: Any, cancel_flag: Event | None = None) -> str:
     """Fetch URL with Cloudflare bypass using a CDP browser."""
     _check_cancellation(cancel_flag, "Bypass cancelled before starting")
@@ -791,8 +942,10 @@ async def _get(url: str, driver: Any, cancel_flag: Event | None = None) -> str:
 
     logger.debug("Starting bypass process...")
     if await _bypass(page, cancel_flag=cancel_flag):
+        html = await _read_page_source(page)
+        html = await _wait_for_aa_download_page(page, url, html, cancel_flag)
         await _extract_cookies_from_cdp(driver, page, url)
-        return await page.get_page_source()
+        return html
 
     logger.warning("Bypass completed but page still shows protection")
     try:
@@ -810,20 +963,40 @@ async def _get(url: str, driver: Any, cancel_flag: Event | None = None) -> str:
 
 def _run_bypass_in_current_process(url: str, retry: int, cancel_flag: Event | None = None) -> str:
     """Run the CDP bypass in the current process."""
+    timeout = (
+        _CHILD_BYPASS_TIMEOUT_SECONDS
+        if os.environ.get(_BYPASS_CHILD_ENV) == "1"
+        else _IN_PROCESS_BYPASS_TIMEOUT_SECONDS
+    )
 
     async def _run_bypass() -> str:
         driver = None
+        # Stop retrying while there is still time to say so. A challenge nothing can solve
+        # would otherwise spend every one of `retry` passes and be cut off mid-pass by the
+        # worker deadline, which surfaces to the caller as `RuntimeError: TimeoutError` -
+        # a message that says nothing about protection and sent users looking at their
+        # reverse proxy. Giving up a pass early returns the real "bypass failed" instead.
+        deadline = time.monotonic() + timeout - _RESERVE_FOR_CLEAN_FAILURE_SECONDS
         try:
             driver = await _create_cdp_browser(url)
 
             for attempt in range(retry):
                 _check_cancellation(cancel_flag, "Bypass cancelled before attempt")
+                if attempt > 0 and time.monotonic() >= deadline:
+                    logger.warning(
+                        "Bypass budget spent after %s/%s attempts; giving up on %s",
+                        attempt,
+                        retry,
+                        url,
+                    )
+                    break
 
                 try:
                     result = await _get(url, driver, cancel_flag)
                     if result:
                         return result
-                except BypassCancelledError:
+                except BypassCancelledError, WaitingRoomTimeoutError:
+                    # Retrying would restart the same queue in another browser.
                     raise
                 except _CDP_OPERATION_ERRORS as e:
                     error_details = f"{type(e).__name__}: {e}"
@@ -838,7 +1011,7 @@ def _run_bypass_in_current_process(url: str, retry: int, cancel_flag: Event | No
                         await _close_cdp_driver(driver)
                         driver = await _create_cdp_browser(url)
 
-            logger.error("Bypass failed after %s attempts", retry)
+            logger.error("Bypass failed for %s", url)
             return ""
         finally:
             if driver:
@@ -852,12 +1025,9 @@ def _run_bypass_in_current_process(url: str, retry: int, cancel_flag: Event | No
     # one call and closes it on the way out, so a helper serving many requests would build
     # and tear down a loop per bypass and would carry no deadline of its own. The worker's
     # loop lives in a thread, outlives any single bypass, and cancels the coroutine when the
-    # deadline passes.
-    timeout = (
-        _CHILD_BYPASS_TIMEOUT_SECONDS
-        if os.environ.get(_BYPASS_CHILD_ENV) == "1"
-        else _IN_PROCESS_BYPASS_TIMEOUT_SECONDS
-    )
+    # deadline passes. `_run_bypass` aims to finish inside this same budget of its own
+    # accord, so reaching this deadline now means a wedged session rather than a stubborn
+    # challenge - which is the only case worth reporting as a timeout.
     return _CDP_WORKER.run(_run_bypass(), timeout=timeout)
 
 
@@ -1137,6 +1307,8 @@ def _get_via_subprocess(url: str, retry: int, cancel_flag: Event | None = None) 
         trace = result.get("traceback")
         if trace:
             logger.debug("Internal bypasser helper traceback: %s", trace)
+        if error_type == WaitingRoomTimeoutError.__name__:
+            raise WaitingRoomTimeoutError(error)
         msg = f"{error_type}: {error}"
         raise RuntimeError(msg)
 
@@ -1154,6 +1326,20 @@ def get(url: str, retry: int | None = None, cancel_flag: Event | None = None) ->
         cached_result = _try_with_cached_cookies(url, urlparse(url).hostname or "")
         if cached_result:
             return cached_result
+
+        # Re-checked after the cached attempt, not just in get_bypassed_page: that check
+        # ran before the queue, and this call may have spent minutes holding for LOCKED
+        # while another request collected a 429 (or collected one itself, just above).
+        # A solve cannot clear a throttle - the challenge renders, the solve "succeeds",
+        # and the cleared request is refused again while the backoff is renewed.
+        remaining = network.host_cooldown_remaining(url)
+        if remaining > 0:
+            hostname = urlparse(url).hostname or url
+            msg = (
+                f"{hostname} is rate-limited (429); skipping bypass for ~{remaining:.0f}s "
+                "until the cooldown clears."
+            )
+            raise network.RateLimitedError(msg)
 
         if env.DOCKERMODE and os.environ.get(_BYPASS_CHILD_ENV) != "1":
             return _get_via_subprocess(url, retry, cancel_flag)
@@ -1339,13 +1525,48 @@ def _start_ffmpeg_recording(display: str) -> None:
         "-an",
         output_file.as_posix(),
         "-nostats",
+        # Was "0", which discards everything including the reason it could not start.
+        # Recordings have been arriving empty with no explanation anywhere: on issue
+        # #1276 all three of a session's recordings were gone and the log said only
+        # "FFmpeg already stopped", because ffmpeg exits before creating the file when
+        # it cannot open the X display. Errors only - this is a debug-mode recorder, not
+        # something to make chatty.
         "-loglevel",
-        "0",
+        "error",
     ]
     logger.debug("Starting FFmpeg recording to %s", output_file)
     logger.debug_trace(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
-    DISPLAY["ffmpeg"] = subprocess.Popen(ffmpeg_cmd)
+    # Kept beside the recording so it travels in the debug bundle, which is the only
+    # place anyone will look for it. A file rather than a pipe: nothing here would drain
+    # a pipe, and a full one would wedge ffmpeg partway through a capture.
+    error_log = output_file.with_suffix(".ffmpeg.log")
+    try:
+        stderr_handle = error_log.open("wb")
+    except OSError as exc:
+        logger.debug("Could not open FFmpeg error log %s: %s", error_log, exc)
+        stderr_handle = None
+    DISPLAY["ffmpeg"] = subprocess.Popen(
+        ffmpeg_cmd, stderr=stderr_handle, stdout=subprocess.DEVNULL
+    )
+    if stderr_handle is not None:
+        # The child holds its own descriptor; this one has done its job.
+        stderr_handle.close()
     DISPLAY["ffmpeg_output"] = output_file
+    DISPLAY["ffmpeg_error_log"] = error_log
+
+
+def _ffmpeg_error_summary() -> str:
+    """What ffmpeg wrote to stderr, for the log line that reports it died."""
+    error_log = DISPLAY.get("ffmpeg_error_log")
+    if not error_log:
+        return "No FFmpeg error log was captured."
+    try:
+        text = Path(error_log).read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as exc:
+        return f"FFmpeg error log unreadable ({exc})."
+    if not text:
+        return f"FFmpeg logged nothing to {error_log}."
+    return f"FFmpeg said: {text[-_FFMPEG_ERROR_TAIL_CHARS:]}"
 
 
 def _stop_ffmpeg_recording() -> None:
@@ -1357,9 +1578,17 @@ def _stop_ffmpeg_recording() -> None:
     if not proc:
         return
     if proc.poll() is not None:
-        logger.debug("FFmpeg already stopped")
+        # Not "already stopped" - ffmpeg was asked to record until now and is gone, so
+        # the recording for this bypass does not exist. Say so, with the reason, rather
+        # than leaving an empty recording/ directory to be discovered later.
+        logger.warning(
+            "FFmpeg exited early (code %s); no recording for this bypass. %s",
+            proc.returncode,
+            _ffmpeg_error_summary(),
+        )
         DISPLAY["ffmpeg"] = None
         DISPLAY["ffmpeg_output"] = None
+        DISPLAY["ffmpeg_error_log"] = None
         return
     try:
         proc.send_signal(signal.SIGINT)
@@ -1374,6 +1603,7 @@ def _stop_ffmpeg_recording() -> None:
             proc.kill()
     DISPLAY["ffmpeg"] = None
     DISPLAY["ffmpeg_output"] = None
+    DISPLAY["ffmpeg_error_log"] = None
 
 
 def _try_with_cached_cookies(url: str, hostname: str) -> str | None:
@@ -1398,8 +1628,26 @@ def _try_with_cached_cookies(url: str, hostname: str) -> str | None:
             verify=get_ssl_verify(url),
         )
         if response.status_code == HTTPStatus.OK:
+            if is_aa_waiting_room(url, response.text):
+                # Clearance is valid, but HTTP cannot run the queue's JavaScript.
+                # Enforce this here for both cache checks, including the locked one.
+                return None
             logger.debug("Cached cookies worked, skipped Chrome bypass")
             return response.text
+        if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+            # Throttled, not challenged. The clearance is still good - the origin is
+            # rate-limiting this IP and would answer 429 to a browser holding the very
+            # same cookies. Discarding it here (as every other rejection does) meant a
+            # solve won seconds earlier was thrown away and the next query bought its
+            # own 20-60s browser solve, which is itself more traffic at a host that has
+            # just asked for less. Keep it, arm the backoff, and let the caller wait.
+            wait = network.note_rate_limited(url)
+            logger.debug(
+                "Cached cookies hit a 429 for %s; keeping them and backing off ~%.0fs",
+                url,
+                wait,
+            )
+            return None
         logger.debug(
             "Cached cookies rejected (%s) for %s; discarding them",
             response.status_code,
@@ -1438,13 +1686,25 @@ def get_bypassed_page(
     attempt_url = sel.rewrite(url)
     hostname = urlparse(attempt_url).hostname or ""
 
+    # A 429 means the origin is throttling this IP; the challenge still renders, so a
+    # solve "succeeds" but the cleared request is rejected again and the throttle is only
+    # renewed. Never spend a minutes-long Chrome solve on a cooling-down host - fail fast
+    # so the caller waits the backoff out instead of looping the solve.
+    remaining = network.host_cooldown_remaining(attempt_url)
+    if remaining > 0:
+        msg = (
+            f"{hostname} is rate-limited (429); skipping bypass for ~{remaining:.0f}s "
+            "until the cooldown clears."
+        )
+        raise network.RateLimitedError(msg)
+
     cached_result = _try_with_cached_cookies(attempt_url, hostname)
     if cached_result:
         return cached_result
 
     try:
         response_html = get(attempt_url, cancel_flag=cancel_flag)
-    except BypassCancelledError:
+    except BypassCancelledError, WaitingRoomTimeoutError:
         raise
     except _CDP_OPERATION_ERRORS + _REQUEST_OPERATION_ERRORS:
         _check_cancellation(cancel_flag, "Bypass cancelled")

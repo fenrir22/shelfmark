@@ -437,13 +437,6 @@ def general_settings() -> list[SettingsField]:
             options=_AUDIOBOOK_FORMAT_OPTIONS,
             default=[*AUDIOBOOK_FORMATS, *ARCHIVE_FORMATS],
         ),
-        MultiSelectField(
-            key="BOOK_LANGUAGE",
-            label="Default Book Languages",
-            description="Default language filter for searches.",
-            options=_LANGUAGE_OPTIONS,
-            default=["en"],
-        ),
     ]
 
 
@@ -479,6 +472,17 @@ def search_mode_settings() -> list[SettingsField]:
                 },
             ],
             default="universal",
+            user_overridable=True,
+        ),
+        MultiSelectField(
+            key="BOOK_LANGUAGE",
+            label="Default Book Languages",
+            description=(
+                "Default language filter for searches. Users can override this for their "
+                "own account."
+            ),
+            options=_LANGUAGE_OPTIONS,
+            default=["en"],
             user_overridable=True,
         ),
         SelectField(
@@ -1031,7 +1035,7 @@ def download_settings() -> list[SettingsField]:
             key="TEMPLATE_RENAME",
             label="Naming Template",
             description=(
-                "Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} "
+                "Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} "
                 "(source filename without extension). Universal adds: {Series}, "
                 "{SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: "
                 "{Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. "
@@ -1050,7 +1054,7 @@ def download_settings() -> list[SettingsField]:
             key="TEMPLATE_ORGANIZE",
             label="Path Template",
             description=(
-                "Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, "
+                "Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, "
                 "{OriginalName} (source filename without extension). Universal adds: {Series}, "
                 "{SeriesPosition}, {Subtitle}, {PrimaryTitle}. Use arbitrary prefix/suffix: "
                 "{Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty."
@@ -1318,7 +1322,7 @@ def download_settings() -> list[SettingsField]:
             key="TEMPLATE_AUDIOBOOK_RENAME",
             label="Naming Template",
             description=(
-                "Variables: {Author}, {Title}, {Year}, {Language}, {User}, {OriginalName} "
+                "Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, {OriginalName} "
                 "(source filename without extension), {Series}, {SeriesPosition}, {Subtitle}, "
                 "{PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: "
                 "{Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty. "
@@ -1338,7 +1342,7 @@ def download_settings() -> list[SettingsField]:
             key="TEMPLATE_AUDIOBOOK_ORGANIZE",
             label="Path Template",
             description=(
-                "Use / to create folders. Variables: {Author}, {Title}, {Year}, {Language}, {User}, "
+                "Use / to create folders. Variables: {Author}, {FirstAuthor} (first of several authors), {Title}, {Year}, {Language}, {User}, "
                 "{OriginalName} (source filename without extension), {Series}, {SeriesPosition}, "
                 "{Subtitle}, {PrimaryTitle}, {PartNumber}. Use arbitrary prefix/suffix: "
                 "{Vol. SeriesPosition - } outputs 'Vol. 2 - ' when set, nothing when empty."
@@ -1563,6 +1567,19 @@ def download_source_settings() -> list[SettingsField]:
             min_value=1,
             max_value=60,
         ),
+        NumberField(
+            key="RELEASE_SEARCH_TIMEOUT",
+            label="Release Search Timeout (seconds)",
+            description=(
+                "How long one release search may run before it gives up and reports why. "
+                "A first search on a cold start pays for a browser solve, so leave room "
+                "for one. If you use a reverse proxy, its read timeout should be at least "
+                "this high or it will cut the search off with a 504 first."
+            ),
+            default=300,
+            min_value=30,
+            max_value=1800,
+        ),
         HeadingField(
             key="content_type_routing_heading",
             title="Content-Type Routing",
@@ -1672,6 +1689,18 @@ def cloudflare_bypass_settings() -> list[SettingsField]:
             max_value=300000,
             requires_restart=True,
             show_when={"field": "USING_EXTERNAL_BYPASSER", "value": True},
+        ),
+        NumberField(
+            key="BYPASS_PAGE_SOURCE_TIMEOUT",
+            label="Page Read Timeout (seconds)",
+            description=(
+                "How long to wait for a solved page to produce its content before the "
+                "bypass is retried. Raise it if solves succeed but searches still fail."
+            ),
+            default=20,
+            min_value=1,
+            max_value=120,
+            show_when={"field": "USING_EXTERNAL_BYPASSER", "value": False},
         ),
         NumberField(
             key="BYPASS_BROWSER_IDLE_TIMEOUT",

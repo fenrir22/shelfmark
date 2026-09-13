@@ -1,9 +1,18 @@
 import { t } from '../../../i18n';
 import type { DeliveryPreferencesResponse } from '../../../services/api';
-import type { HeadingFieldConfig, SelectFieldConfig } from '../../../types/settings';
-import { HeadingField, SelectField } from '../fields';
+import type {
+  HeadingFieldConfig,
+  MultiSelectFieldConfig,
+  SelectFieldConfig,
+} from '../../../types/settings';
+import { HeadingField, MultiSelectField, SelectField } from '../fields';
 import { FieldWrapper } from '../shared';
-import { getFieldByKey, toNormalizedLowercaseTextValue, toTextValue } from './fieldHelpers';
+import {
+  getFieldByKey,
+  resolveListOverride,
+  toNormalizedLowercaseTextValue,
+  toTextValue,
+} from './fieldHelpers';
 import type { PerUserSettings } from './types';
 
 interface UserSearchPreferencesSectionProps {
@@ -15,6 +24,7 @@ interface UserSearchPreferencesSectionProps {
 
 type SearchSettingKey =
   | 'SEARCH_MODE'
+  | 'BOOK_LANGUAGE'
   | 'METADATA_PROVIDER'
   | 'METADATA_PROVIDER_AUDIOBOOK'
   | 'DEFAULT_RELEASE_SOURCE'
@@ -69,6 +79,15 @@ const fallbackDefaultAudiobookReleaseSourceField: SelectFieldConfig = {
   options: [{ value: '', label: t('use_book_release_source') }],
 };
 
+const fallbackBookLanguageField: MultiSelectFieldConfig = {
+  type: 'MultiSelectField',
+  key: 'BOOK_LANGUAGE',
+  label: 'Default Book Languages',
+  description: 'Default language filter for searches.',
+  value: [],
+  options: [],
+};
+
 const searchHeading: HeadingFieldConfig = {
   type: 'HeadingField',
   key: 'search_preferences_heading',
@@ -120,6 +139,13 @@ export const UserSearchPreferencesSection = ({
     fields,
     'DEFAULT_RELEASE_SOURCE_AUDIOBOOK',
     fallbackDefaultAudiobookReleaseSourceField,
+  );
+  const bookLanguageField = getFieldByKey(fields, 'BOOK_LANGUAGE', fallbackBookLanguageField);
+
+  const { value: bookLanguageValue, isOverridden: isBookLanguageOverridden } = resolveListOverride(
+    userSettings.BOOK_LANGUAGE,
+    globalValues.BOOK_LANGUAGE,
+    Object.prototype.hasOwnProperty.call(userSettings, 'BOOK_LANGUAGE'),
   );
 
   const isOverridden = (key: SearchSettingKey): boolean => {
@@ -173,9 +199,12 @@ export const UserSearchPreferencesSection = ({
   const canOverrideDefaultAudiobookReleaseSource =
     isUserOverridable('DEFAULT_RELEASE_SOURCE_AUDIOBOOK') &&
     preferenceKeySet.has('DEFAULT_RELEASE_SOURCE_AUDIOBOOK');
+  const canOverrideBookLanguage =
+    isUserOverridable('BOOK_LANGUAGE') && preferenceKeySet.has('BOOK_LANGUAGE');
 
   if (
     !canOverrideSearchMode &&
+    !canOverrideBookLanguage &&
     !canOverrideMetadataProvider &&
     !canOverrideAudiobookMetadataProvider &&
     !canOverrideDefaultReleaseSource &&
@@ -205,6 +234,27 @@ export const UserSearchPreferencesSection = ({
             value={searchModeValue}
             onChange={(value) => setUserSettings((prev) => ({ ...prev, SEARCH_MODE: value }))}
             disabled={Boolean(searchModeField.fromEnv)}
+          />
+        </FieldWrapper>
+      )}
+
+      {canOverrideBookLanguage && (
+        <FieldWrapper
+          field={bookLanguageField}
+          resetAction={
+            isBookLanguageOverridden
+              ? {
+                  disabled: Boolean(bookLanguageField.fromEnv),
+                  onClick: () => resetKeys(['BOOK_LANGUAGE']),
+                }
+              : undefined
+          }
+        >
+          <MultiSelectField
+            field={bookLanguageField}
+            value={bookLanguageValue}
+            onChange={(value) => setUserSettings((prev) => ({ ...prev, BOOK_LANGUAGE: value }))}
+            disabled={Boolean(bookLanguageField.fromEnv)}
           />
         </FieldWrapper>
       )}
