@@ -1130,6 +1130,7 @@ const ReleaseModalSession = ({
     currentSort,
     allSortOptions,
     columnConfig,
+    contentType,
     book,
   ]);
 
