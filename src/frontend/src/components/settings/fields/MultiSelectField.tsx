@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
+import { t } from '../../../i18n';
 import type { MultiSelectFieldConfig } from '../../../types/settings';
 import { DropdownList } from '../../DropdownList';
 
@@ -146,7 +147,7 @@ const MultiSelectDropdownField = ({
         return;
       }
 
-      // If user selects every specific option individually, collapse to "all".
+// If user selects every specific option individually, collapse to "all".
       if (
         nonAllValues.length > 0 &&
         nonAllValues.every((optValue) => nextValues.includes(optValue))
@@ -161,13 +162,12 @@ const MultiSelectDropdownField = ({
     onChange(explicitOnly);
   };
 
-  // Custom summary formatter - only count explicit selections
   const summaryFormatter = () => {
     if (allSelected) {
-      return orderedOptions.find((opt) => opt.value === ALL_OPTION_VALUE)?.label || 'All';
+      return orderedOptions.find((opt) => opt.value === ALL_OPTION_VALUE)?.label || t('all');
     }
     if (selectedExplicit.length === 0) {
-      return <span className="opacity-60">{field.placeholder || 'Select categories...'}</span>;
+      return <span className="opacity-60">{field.placeholder || t('select_categories')}</span>;
     }
     const selectedLabels = selectedExplicit
       .map((v) => orderedOptions.find((o) => o.value === v)?.label)
@@ -196,7 +196,7 @@ const MultiSelectDropdownField = ({
       multiple
       showCheckboxes
       keepOpenOnSelect
-      placeholder={field.placeholder || 'Select categories...'}
+      placeholder={field.placeholder || t('select_categories')}
       widthClassName="w-full"
       summaryFormatter={summaryFormatter}
     />
@@ -343,7 +343,7 @@ const MultiSelectPillsField = ({
                   d="M5 15l7-7 7 7"
                 />
               </svg>
-              Show less
+              {t('show_less')}
             </>
           ) : (
             <>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { t } from '../../../i18n';
 import type { AdminUser } from '../../../services/api';
 import type {
   PasswordFieldConfig,
@@ -22,13 +23,13 @@ const UserCardShell = ({ title, children }: { title: string; children: ReactNode
 );
 
 const CREATE_ROLE_OPTIONS: SelectOption[] = [
-  { value: 'user', label: 'User' },
-  { value: 'admin', label: 'Admin' },
+  { value: 'user', label: t('user') },
+  { value: 'admin', label: t('admin') },
 ];
 
 const EDIT_ROLE_OPTIONS: SelectOption[] = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'user', label: 'User' },
+  { value: 'admin', label: t('admin') },
+  { value: 'user', label: t('user') },
 ];
 
 const createTextField = (
@@ -64,7 +65,7 @@ const createPasswordField = (
 const createRoleField = (value: string, options: SelectOption[]): SelectFieldConfig => ({
   type: 'SelectField',
   key: 'role',
-  label: 'Role',
+  label: t('role'),
   value,
   options,
 });
@@ -200,7 +201,7 @@ export const UserIdentityHeader = ({
           )}
           {showAuthSource && <UserAuthSourceBadge user={user} showInactive={false} />}
         </div>
-        <div className="truncate text-xs opacity-50">{user.email || 'No email'}</div>
+        <div className="truncate text-xs opacity-50">{user.email || t('no_email')}</div>
         {showInactiveState && !active && (
           <div className="truncate text-[11px] opacity-60">
             Inactive for current authentication mode
@@ -247,7 +248,7 @@ export const UserEditActions = ({
           disabled={cancelDisabled}
           className="hover-action rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Cancel
+          {t('cancel')}
         </button>
         <button
           type="button"
@@ -273,10 +274,10 @@ export const UserEditActions = ({
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 />
               </svg>
-              Saving...
+              {t('saving')}
             </>
           ) : (
-            'Save Changes'
+            t('save_changes')
           )}
         </button>
       </div>
@@ -292,7 +293,7 @@ export const UserEditActions = ({
           disabled={saveDisabled}
           className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving ? 'Saving...' : 'Save Changes'}
+          {saving ? t('saving') : t('save_changes')}
         </button>
         <button
           type="button"
@@ -300,7 +301,7 @@ export const UserEditActions = ({
           disabled={cancelDisabled}
           className="rounded-lg border border-(--border-muted) bg-(--bg) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface) disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Cancel
+          {t('cancel')}
         </button>
       </div>
       {onDelete && (
@@ -313,7 +314,7 @@ export const UserEditActions = ({
                 disabled={deleting}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {deleting ? 'Deleting...' : 'Confirm Delete'}
+                {deleting ? t('deleting') : t('confirm_delete')}
               </button>
               <button
                 type="button"
@@ -321,7 +322,7 @@ export const UserEditActions = ({
                 disabled={deleting}
                 className="rounded-lg border border-(--border-muted) bg-(--bg) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface) disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </>
           ) : (
@@ -330,7 +331,7 @@ export const UserEditActions = ({
               onClick={onDelete}
               className="rounded-lg border border-red-500/40 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10"
             >
-              Delete User
+              {t('delete_user')}
             </button>
           )}
         </div>
@@ -358,32 +359,32 @@ export const UserCreateCard = ({
   onSubmit,
   onCancel,
 }: UserCreateCardProps) => {
-  const usernameField = createTextField('username', 'Username', form.username, 'username', true);
+  const usernameField = createTextField('username', t('username'), form.username, 'username', true);
   const roleField = createRoleField(form.role, CREATE_ROLE_OPTIONS);
   const displayNameField = createTextField(
     'display_name',
-    'Display Name',
+    t('display_name'),
     form.display_name,
-    'Display name',
+    t('display_name'),
   );
-  const emailField = createTextField('email', 'Email', form.email, 'user@example.com');
+  const emailField = createTextField('email', t('email'), form.email, 'user@example.com');
   const passwordField = createPasswordField(
     'password',
-    'Password',
+    t('password'),
     form.password,
-    'Min 4 characters',
+    t('min_4_characters'),
     true,
   );
   const confirmPasswordField = createPasswordField(
     'confirm_password',
-    'Confirm Password',
+    t('confirm_password'),
     form.password_confirm,
-    'Confirm password',
+    t('confirm_password'),
     true,
   );
 
   return (
-    <UserCardShell title="Create Local User">
+    <UserCardShell title={t('create_local_user')}>
       {isFirstUser && (
         <p className="text-xs text-zinc-500">
           This will be the first account and will be created as admin.
@@ -421,14 +422,14 @@ export const UserCreateCard = ({
           disabled={creating}
           className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {creating ? 'Creating...' : 'Create Local User'}
+          {creating ? t('creating') : t('create_local_user')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-lg border border-(--border-muted) bg-(--bg) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface)"
         >
-          Cancel
+          {t('cancel')}
         </button>
       </div>
     </UserCardShell>
@@ -475,22 +476,22 @@ const UserEditFields = ({
 
   const displayNameField = createTextField(
     'display_name',
-    'Display Name',
+    t('display_name'),
     user.display_name || '',
-    'Display name',
+    t('display_name'),
   );
-  const emailField = createTextField('email', 'Email', user.email || '', 'user@example.com');
+  const emailField = createTextField('email', t('email'), user.email || '', 'user@example.com');
   const newPasswordField = createPasswordField(
     'new_password',
-    'New Password',
+    t('new_password'),
     editPassword,
-    'Leave empty to keep current',
+    t('leave_empty_keep_current'),
   );
   const confirmPasswordField = createPasswordField(
     'confirm_password',
-    'Confirm Password',
+    t('confirm_password'),
     editPasswordConfirm,
-    'Confirm new password',
+    t('confirm_new_password'),
     true,
   );
 
@@ -574,7 +575,7 @@ const renderPreferencesPanel = (panel: UserPreferencesPanelProps) => (
   <div className="space-y-3">
     {(!panel.hideTitle || panel.onAction) && (
       <div>
-        {!panel.hideTitle && <p className="text-sm font-medium">User Preferences</p>}
+        {!panel.hideTitle && <p className="text-sm font-medium">{t('user_preferences')}</p>}
         {!panel.hideTitle && panel.description && (
           <p className="mt-0.5 text-xs opacity-60">{panel.description}</p>
         )}
@@ -584,7 +585,7 @@ const renderPreferencesPanel = (panel: UserPreferencesPanelProps) => (
             onClick={panel.onAction}
             className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700"
           >
-            {panel.actionLabel || 'Open User Preferences'}
+            {panel.actionLabel || t('open_user_preferences')}
           </button>
         )}
       </div>

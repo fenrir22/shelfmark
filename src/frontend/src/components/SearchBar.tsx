@@ -1,6 +1,7 @@
 import type { InputHTMLAttributes } from 'react';
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
+import { t } from '../i18n';
 import { useSearchMode } from '../contexts/SearchModeContext';
 import { useSearchBarAutocomplete } from '../hooks/searchBar/useSearchBarAutocomplete';
 import { useDismiss } from '../hooks/useDismiss';
@@ -126,12 +127,14 @@ const getDefaultPlaceholder = (
   if (fallback) return fallback;
 
   if (!activeQueryTarget || activeQueryTarget.source === 'general') {
-    if (isCombinedMode) return 'Search Books & Audiobooks';
-    return contentType === 'ebook' ? 'Search Books' : 'Search Audiobooks';
+    if (isCombinedMode) return t('search_books_audiobooks');
+    if (contentType === 'ebook') return t('search_books');
+    if (contentType === 'manuale') return t('search_manuals');
+    return t('search_audiobooks');
   }
 
   if (activeQueryTarget.source === 'manual') {
-    return 'Search releases directly…';
+    return t('search_releases_directly');
   }
 
   const field = activeQueryTarget.field;
@@ -170,14 +173,14 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       onAdvancedToggle,
       isAdvancedActive = false,
       placeholder,
-      inputAriaLabel = 'Search books',
+      inputAriaLabel = t('search_books'),
       className = '',
       inputClassName = '',
       controlsClassName = '',
-      clearButtonLabel = 'Clear search input',
-      clearButtonTitle = 'Clear search',
-      searchButtonLabel = 'Search books',
-      searchButtonTitle = 'Search',
+      clearButtonLabel = t('clear_search_input'),
+      clearButtonTitle = t('clear_search'),
+      searchButtonLabel = t('search_books'),
+      searchButtonTitle = t('search'),
       autoComplete = 'off',
       enterKeyHint = 'search',
       contentType = 'ebook',
@@ -368,6 +371,9 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       placeholder,
       combinedSelectionActive,
     );
+    const effectiveSearchButtonLabel = searchButtonLabel === t('search_books') && contentType === 'manuale'
+      ? t('search_manuals')
+      : searchButtonLabel;
     const effectiveInputAriaLabel = activeTarget
       ? `${inputAriaLabel}: ${activeTarget.label}`
       : inputAriaLabel;
@@ -479,7 +485,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
             <span className="truncate opacity-50">{effectivePlaceholder}</span>
           );
           if (isDynamicLoading) {
-            selectTriggerContent = <span className="truncate opacity-50">Loading…</span>;
+            selectTriggerContent = <span className="truncate opacity-50">{t('loading')}</span>;
           } else if (selectedOption) {
             selectTriggerContent = <span className="truncate">{selectedOption.label}</span>;
           }
@@ -542,13 +548,16 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
       }
     };
 
-    let selectorContentTypeLabel = 'audiobooks';
+    let selectorContentTypeLabel = t('audiobooks');
     let selectorIcon = <AudiobookIcon />;
-    if (combinedSelectionActive) {
-      selectorContentTypeLabel = 'books and audiobooks';
+if (combinedMode) {
+      selectorContentTypeLabel = t('books_and_audiobooks');
       selectorIcon = <BothIcon />;
     } else if (contentType === 'ebook') {
-      selectorContentTypeLabel = 'books';
+      selectorContentTypeLabel = t('books');
+      selectorIcon = <BookIcon />;
+    } else if (contentType === 'manuale') {
+      selectorContentTypeLabel = t('manuals');
       selectorIcon = <BookIcon />;
     }
 
@@ -639,6 +648,280 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                 className="absolute top-1/2 right-0 h-6 w-px -translate-y-1/2"
                 style={{ background: 'var(--border-muted)' }}
               />
+
+              {isSelectorOpen && (
+                <div
+                  className="animate-fade-in-down absolute top-full left-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border shadow-2xl"
+                  style={{
+                    background: 'var(--bg)',
+                    borderColor: 'var(--border-muted)',
+                  }}
+                  role="dialog"
+                  aria-label={t('search_context')}
+                >
+                  <div className="max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto p-3">
+                    {showContentTypeSelector && (
+                      <div
+                        className={`border-b ${onCombinedModeChange ? 'pb-0' : 'pb-3'}`}
+                        style={{ borderColor: 'var(--border-muted)' }}
+                      >
+                        <div className="flex items-center justify-between px-1 pb-2">
+                          <span className="text-xs font-medium tracking-wide uppercase opacity-60">
+                            {t('content')}
+                          </span>
+                          {onAdvancedToggle && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsSelectorOpen(false);
+                                onAdvancedToggle();
+                              }}
+                              className={`-mt-1.5 -mr-1 -mb-0.5 flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-medium transition-colors ${
+                                isAdvancedActive ? 'bg-emerald-600 text-white' : 'hover-surface'
+                              }`}
+                              style={
+                                isAdvancedActive
+                                  ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                                  : { color: 'var(--text-muted)' }
+                              }
+                            >
+                              <svg
+                                className="h-3.5 w-3.5"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth="1.5"
+                                stroke="currentColor"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+                                />
+                              </svg>
+                              {t('options')}
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleContentTypeSelect('ebook')}
+                            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                              contentType === 'ebook' || combinedMode
+                                ? 'bg-emerald-600 text-white'
+                                : 'hover-surface'
+                            }`}
+                            style={
+                              contentType === 'ebook' || combinedMode
+                                ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                                : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                            }
+                          >
+                            {contentType === 'ebook' || combinedMode ? <CheckIcon /> : <BookIcon />}
+                            <span>{t('books')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleContentTypeSelect('audiobook')}
+                            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                              contentType === 'audiobook' || combinedMode
+                                ? 'bg-emerald-600 text-white'
+                                : 'hover-surface'
+                            }`}
+                            style={
+                              contentType === 'audiobook' || combinedMode
+                                ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                                : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                            }
+                          >
+                            {contentType === 'audiobook' || combinedMode ? (
+                              <CheckIcon />
+                            ) : (
+                              <AudiobookIcon />
+                            )}
+                            <span>{t('audiobooks')}</span>
+                          </button>
+                          {allowedContentTypes?.includes('manuale') && (
+                            <button
+                              type="button"
+                              onClick={() => handleContentTypeSelect('manuale')}
+                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                                contentType === 'manuale'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'hover-surface'
+                              }`}
+                              style={
+                                contentType === 'manuale'
+                                  ? { borderColor: 'rgb(16 185 129 / 0.7)' }
+                                  : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                              }
+                            >
+                              {contentType === 'manuale' ? <CheckIcon /> : <BookIcon />}
+                              <span>{t('manuals')}</span>
+                            </button>
+                          )}
+                        </div>
+                        {onCombinedModeChange &&
+                          (() => {
+                            const lineColor = combinedMode
+                              ? 'bg-emerald-500'
+                              : 'bg-(--border-muted) group-hover:bg-zinc-400 dark:group-hover:bg-zinc-500';
+                            return (
+                              <Tooltip
+                                content={t('combined_search')}
+                                position="bottom"
+                                triggerClassName="w-full"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={handleCombinedModeSelect}
+                                  className="group w-full"
+                                  aria-label={t('combined_search')}
+                                >
+                                  {/* Bracket connector: vertical drops + horizontal bar with icon */}
+                                  <div className="relative flex h-7 items-end">
+                                    {/* Left vertical */}
+                                    <div
+                                      className={`absolute top-1.5 bottom-[11px] left-[25%] w-px transition-colors ${lineColor}`}
+                                    />
+                                    {/* Right vertical */}
+                                    <div
+                                      className={`absolute top-1.5 right-[25%] bottom-[11px] w-px transition-colors ${lineColor}`}
+                                    />
+                                    {/* Horizontal bar – left segment */}
+                                    <div
+                                      className={`absolute bottom-[11px] left-[25%] h-px transition-colors ${lineColor}`}
+                                      style={{ width: 'calc(25% - 16px)' }}
+                                    />
+                                    {/* Horizontal bar – right segment */}
+                                    <div
+                                      className={`absolute right-[25%] bottom-[11px] h-px transition-colors ${lineColor}`}
+                                      style={{ width: 'calc(25% - 16px)' }}
+                                    />
+                                    {/* Chain icon centered at bottom */}
+                                    <div
+                                      className={`relative z-10 mx-auto rounded-full p-1 transition-colors ${
+                                        combinedMode
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'bg-(--bg) text-zinc-400 group-hover:bg-zinc-200 group-hover:text-zinc-600 dark:text-zinc-500 dark:group-hover:bg-zinc-700 dark:group-hover:text-zinc-300'
+                                      }`}
+                                    >
+                                      <svg
+                                        className="h-3.5 w-3.5"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth="2"
+                                        stroke="currentColor"
+                                        aria-hidden="true"
+                                      >
+                                        {combinedModeLocked ? (
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                                          />
+                                        ) : (
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"
+                                          />
+                                        )}
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </button>
+                              </Tooltip>
+                            );
+                          })()}
+                      </div>
+                    )}
+
+                    <div className={showContentTypeSelector ? 'pt-2' : ''}>
+                      <div className="flex items-center justify-between px-1 pb-1.5">
+                        <span className="text-xs font-medium tracking-wide uppercase opacity-60">
+                          {t('search_by')}
+                        </span>
+                        {!showContentTypeSelector && onAdvancedToggle && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSelectorOpen(false);
+                              onAdvancedToggle();
+                            }}
+                            className={`-mt-1.5 -mr-1 -mb-0.5 flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-medium transition-colors ${
+                              isAdvancedActive
+                                ? `${searchMode === 'direct' ? 'bg-sky-700' : 'bg-emerald-600'} text-white`
+                                : 'hover-surface'
+                            }`}
+                            style={
+                              isAdvancedActive
+                                ? {
+                                    borderColor:
+                                      searchMode === 'direct'
+                                        ? 'rgb(3 105 161 / 0.7)'
+                                        : 'rgb(16 185 129 / 0.7)',
+                                  }
+                                : { color: 'var(--text-muted)' }
+                            }
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth="1.5"
+                              stroke="currentColor"
+                              aria-hidden="true"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+                              />
+                            </svg>
+                            {t('options')}
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {queryTargets.map((target) => {
+                          const isActive = target.key === activeTarget?.key;
+                          return (
+                            <button
+                              type="button"
+                              key={target.key}
+                              onClick={() => handleQueryTargetSelect(target.key)}
+                              title={target.description || target.label}
+                              aria-label={target.label}
+                              className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                                isActive
+                                  ? `${searchMode === 'direct' ? 'bg-sky-700' : 'bg-emerald-600'} text-white`
+                                  : 'hover-surface'
+                              }`}
+                              style={
+                                isActive
+                                  ? {
+                                      borderColor:
+                                        searchMode === 'direct'
+                                          ? 'rgb(3 105 161 / 0.7)'
+                                          : 'rgb(16 185 129 / 0.7)',
+                                    }
+                                  : { color: 'var(--text)', borderColor: 'var(--border-muted)' }
+                              }
+                            >
+                              {isActive && <CheckIcon />}
+                              <span className="block truncate">{target.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -676,7 +959,7 @@ export const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(
                   ? 'bg-emerald-600 hover:bg-emerald-700'
                   : 'bg-sky-700 hover:bg-sky-800'
               }`}
-              aria-label={searchButtonLabel}
+              aria-label={effectiveSearchButtonLabel}
               title={searchButtonTitle}
               disabled={isLoading}
             >

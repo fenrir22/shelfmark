@@ -1,3 +1,4 @@
+import { t } from '../../../i18n';
 import type { RequestPolicyMode } from '../../../types';
 import type { TableFieldConfig } from '../../../types/settings';
 import { isRecord, toNormalizedLowercaseTextValue } from './fieldHelpers';
@@ -29,31 +30,31 @@ export const REQUEST_POLICY_DEFAULT_OPTIONS: Array<{
 }> = [
   {
     value: 'download',
-    label: 'Download',
+    label: t('download'),
     description: 'Everything can be downloaded directly.',
   },
   {
     value: 'request_release',
-    label: 'Request Release',
+    label: t('request_release'),
     description: 'Users must request a specific release.',
   },
   {
     value: 'request_book',
-    label: 'Request Book',
+    label: t('request_book_label'),
     description: 'Users request a book, admin picks the release.',
   },
   {
     value: 'blocked',
-    label: 'Blocked',
+    label: t('blocked'),
     description: 'No downloads or requests allowed.',
   },
 ];
 
 export const REQUEST_POLICY_MODE_LABELS: Record<RequestPolicyMode, string> = {
-  download: 'Download',
-  request_release: 'Request Release',
-  request_book: 'Request Book',
-  blocked: 'Blocked',
+  download: t('download'),
+  request_release: t('request_release'),
+  request_book: t('request_book_label'),
+  blocked: t('blocked'),
 };
 
 const MATRIX_MODES: RequestPolicyMatrixMode[] = ['download', 'request_release', 'blocked'];

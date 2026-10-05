@@ -36,6 +36,7 @@ def search_source_releases(
     content_type: str = "ebook",
     source_filters: SearchFilters | None = None,
     user_id: int | None = None,
+    add_offset: int = 0,
 ) -> tuple[ReleaseSource | None, list[Release], str | None]:
     """Search a single release source, returning any error instead of raising.
 
@@ -81,9 +82,23 @@ def search_source_releases(
             content_type,
         )
 
-        releases = source.search(
-            search_book, plan, expand_search=expand_search, content_type=content_type
-        )
+        if add_offset:
+            try:
+                releases = source.search(
+                    search_book,
+                    plan,
+                    expand_search=expand_search,
+                    content_type=content_type,
+                    add_offset=add_offset,  # type: ignore[call-arg]
+                )
+            except TypeError:
+                releases = source.search(
+                    search_book, plan, expand_search=expand_search, content_type=content_type
+                )
+        else:
+            releases = source.search(
+                search_book, plan, expand_search=expand_search, content_type=content_type
+            )
     except ValueError:
         return None, [], f"Unknown source: {source_name}"
     except (SourceUnavailableError, *_OPERATIONAL_ERRORS) as exc:

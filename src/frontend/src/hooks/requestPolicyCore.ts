@@ -24,7 +24,7 @@ interface RefreshPolicyOptions {
   force?: boolean;
 }
 
-const normalizeContentType = (value: string): ContentType => {
+const normalizeContentType = (value: string): 'ebook' | 'audiobook' => {
   return value.trim().toLowerCase() === 'audiobook' ? 'audiobook' : 'ebook';
 };
 

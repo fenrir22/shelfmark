@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { Language } from '../types';
 import {
   LANGUAGE_OPTION_ALL,
@@ -40,7 +41,7 @@ export const LanguageMultiSelect = ({
   const optionList: DropdownListOption[] = [
     {
       value: LANGUAGE_OPTION_ALL,
-      label: 'All languages',
+      label: t('all_languages'),
     },
     // Each default language as a separate option
     ...defaultLanguages.map((lang) => ({
@@ -67,7 +68,7 @@ export const LanguageMultiSelect = ({
 
   const summaryFormatter = (_selected: DropdownListOption[], fallback: string) => {
     if (isAllSelected) {
-      return 'All languages';
+      return t('all_languages');
     }
 
     const labels: string[] = [];

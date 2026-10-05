@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { t } from '../../../i18n';
 import type { ActionButtonConfig, ActionResult } from '../../../types/settings';
 
 interface ActionButtonProps {
@@ -37,7 +38,7 @@ export const ActionButton = ({ field, onAction, disabled }: ActionButtonProps) =
     } catch (err) {
       setResult({
         success: false,
-        message: err instanceof Error ? err.message : 'Action failed',
+        message: err instanceof Error ? err.message : t('action_failed'),
       });
     } finally {
       setIsLoading(false);
@@ -79,7 +80,7 @@ export const ActionButton = ({ field, onAction, disabled }: ActionButtonProps) =
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 />
               </svg>
-              Running...
+              {t('running')}
             </span>
           ) : (
             field.label

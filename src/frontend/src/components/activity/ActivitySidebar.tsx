@@ -9,6 +9,7 @@ import { ActivityCard } from './ActivityCard';
 import type { DownloadStatusKey } from './activityMappers';
 import { downloadToActivityItem } from './activityMappers';
 import type { ActivityItem } from './activityTypes';
+import { t } from '../../i18n';
 
 interface ActivitySidebarProps {
   isOpen: boolean;
@@ -70,15 +71,15 @@ const ALL_USERS_FILTER = '__all_users__';
 
 const getCategoryLabel = (key: ActivityCategoryKey, isAdmin: boolean): string => {
   if (key === 'needs_review') {
-    return isAdmin ? 'Needs Review' : 'Waiting';
+    return isAdmin ? t('needs_review') : t('waiting');
   }
   if (key === 'in_progress') {
-    return 'In Progress';
+    return t('in_progress');
   }
   if (key === 'complete') {
-    return 'Complete';
+    return t('complete');
   }
-  return 'Failed';
+  return t('failed');
 };
 
 const getVisibleCategoryOrder = (tab: ActivityTabKey): ActivityCategoryKey[] => {
@@ -422,14 +423,14 @@ export const ActivitySidebar = ({
     baseVisibleItems = historyItems;
   }
   const isHistoryInitialLoad = effectiveActiveTab === 'history' && !historyLoaded;
-  let emptyStateMessage = 'No activity';
+  let emptyStateMessage = t('no_activity');
   if (effectiveActiveTab === 'requests') {
-    emptyStateMessage = isRequestsLoading ? 'Loading requests...' : 'No requests';
+    emptyStateMessage = isRequestsLoading ? t('loading_requests') : t('no_requests');
   } else if (effectiveActiveTab === 'history') {
     emptyStateMessage =
-      historyLoading || isHistoryInitialLoad ? 'Loading history...' : 'No history';
+      historyLoading || isHistoryInitialLoad ? t('loading_history') : t('no_history');
   } else if (effectiveActiveTab === 'downloads') {
-    emptyStateMessage = 'No downloads';
+    emptyStateMessage = t('no_downloads');
   }
 
   const availableUsers = useMemo(() => {
@@ -587,14 +588,14 @@ export const ActivitySidebar = ({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">
-              {effectiveActiveTab === 'history' ? 'History' : 'Activity'}
+              {effectiveActiveTab === 'history' ? t('history') : t('activity')}
             </h2>
             <button
               type="button"
               onClick={handleTogglePinned}
               className="hover-action hidden h-9 w-9 items-center justify-center rounded-full transition-colors lg:inline-flex"
-              title={isPinned ? 'Unpin activity sidebar' : 'Pin activity sidebar'}
-              aria-label={isPinned ? 'Unpin activity sidebar' : 'Pin activity sidebar'}
+              title={isPinned ? t('unpin_activity_sidebar') : t('pin_activity_sidebar')}
+              aria-label={isPinned ? t('unpin_activity_sidebar') : t('pin_activity_sidebar')}
             >
               {isPinned ? (
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -636,12 +637,12 @@ export const ActivitySidebar = ({
                     }`}
                     title={
                       effectiveSelectedUser === ALL_USERS_FILTER
-                        ? 'Filter by user'
+                        ? t('filter_by_user')
                         : `Filtered: ${effectiveSelectedUser}`
                     }
                     aria-label={
                       effectiveSelectedUser === ALL_USERS_FILTER
-                        ? 'Filter by user'
+                        ? t('filter_by_user')
                         : `Filtered by user ${effectiveSelectedUser}`
                     }
                     aria-expanded={isDropdownOpen}
@@ -667,7 +668,7 @@ export const ActivitySidebar = ({
                   <div role="listbox">
                     {[ALL_USERS_FILTER, ...availableUsers].map((value) => {
                       const isSelected = effectiveSelectedUser === value;
-                      const label = value === ALL_USERS_FILTER ? 'All users' : value;
+                      const label = value === ALL_USERS_FILTER ? t('all_users') : value;
                       return (
                         <button
                           type="button"
@@ -709,8 +710,8 @@ export const ActivitySidebar = ({
               className={`hover-action relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
                 effectiveActiveTab === 'history' ? 'text-sky-600 dark:text-sky-400' : ''
               }`}
-              title={effectiveActiveTab === 'history' ? 'Back to activity' : 'Open history'}
-              aria-label={effectiveActiveTab === 'history' ? 'Back to activity' : 'Open history'}
+              title={effectiveActiveTab === 'history' ? t('back_to_activity') : t('open_history')}
+              aria-label={effectiveActiveTab === 'history' ? t('back_to_activity') : t('open_history')}
               aria-pressed={effectiveActiveTab === 'history'}
             >
               <svg
@@ -734,8 +735,7 @@ export const ActivitySidebar = ({
               type="button"
               onClick={onClose}
               className="hover-action inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors"
-              aria-label="Close activity sidebar"
-            >
+              aria-label={t('close_activity_sidebar')}            >
               <svg
                 className="h-5 w-5"
                 viewBox="0 0 24 24"
@@ -774,7 +774,7 @@ export const ActivitySidebar = ({
                 }`}
                 aria-current={effectiveActiveTab === 'all' ? 'page' : undefined}
               >
-                All
+                {t('all')}
               </button>
               <button
                 type="button"
@@ -789,7 +789,7 @@ export const ActivitySidebar = ({
                 }`}
                 aria-current={effectiveActiveTab === 'downloads' ? 'page' : undefined}
               >
-                Downloads
+                {t('downloads')}
                 {mergedDownloadItems.length > 0 && (
                   <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-sky-500/15 px-1 text-[11px] leading-none text-sky-700 dark:text-sky-300">
                     {mergedDownloadItems.length}
@@ -810,7 +810,7 @@ export const ActivitySidebar = ({
                   }`}
                   aria-current={effectiveActiveTab === 'requests' ? 'page' : undefined}
                 >
-                  Requests
+                  {t('requests')}
                   {pendingRequestCount > 0 && (
                     <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/15 px-1 text-[11px] leading-none text-amber-700 dark:text-amber-300">
                       {pendingRequestCount}
@@ -847,7 +847,7 @@ export const ActivitySidebar = ({
                       disabled={historyLoading}
                       className="text-sm text-sky-600 hover:underline disabled:opacity-60 dark:text-sky-400"
                     >
-                      {historyLoading ? 'Loading...' : 'Load more'}
+                      {historyLoading ? t('loading') : t('load_more')}
                     </button>
                   </div>
                 )}
@@ -1003,7 +1003,7 @@ export const ActivitySidebar = ({
               onClick={() => onClearCompleted(clearCompletedTargets)}
               className="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             >
-              Clear Completed
+              {t('clear_completed')}
             </button>
           </div>
         )}
@@ -1021,7 +1021,7 @@ export const ActivitySidebar = ({
             onClick={onClearHistory}
             className="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
-            Clear History
+            {t('clear_history')}
           </button>
         </div>
       )}

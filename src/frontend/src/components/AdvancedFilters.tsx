@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { t } from '../i18n';
 import { CONTENT_OPTIONS } from '../data/filterOptions';
 import type {
   AdvancedFilterState,
@@ -47,14 +48,13 @@ interface AdvancedFiltersProps {
 const SEARCH_MODE_OPTIONS = [
   {
     value: 'direct',
-    label: 'Direct',
-    description: 'Search web sources for books and download directly. Works out of the box.',
+    label: t('direct'),
+    description: t('direct_description'),
   },
   {
     value: 'universal',
-    label: 'Universal',
-    description:
-      'Metadata-based search with downloads from all sources. Book and Audiobook support.',
+    label: t('universal'),
+    description: t('universal_description'),
   },
 ];
 
@@ -107,9 +107,9 @@ export const AdvancedFilters = ({
 
   const providerOptions = metadataProviders.map((provider) => {
     const details: string[] = [];
-    if (!provider.enabled) details.push('Disabled in Settings');
-    if (provider.enabled && !provider.available) details.push('Not configured');
-    if (provider.requires_auth) details.push('API key required');
+    if (!provider.enabled) details.push(t('disabled_in_settings'));
+    if (provider.enabled && !provider.available) details.push(t('not_configured'));
+    if (provider.requires_auth) details.push(t('api_key_required'));
 
     return {
       value: provider.name,
@@ -119,11 +119,11 @@ export const AdvancedFilters = ({
     };
   });
 
-  let metadataProviderLabel = 'Book Metadata Provider';
+  let metadataProviderLabel = t('book_metadata_provider');
   if (combinedMode) {
-    metadataProviderLabel = 'Combined Metadata Provider';
+    metadataProviderLabel = t('combined_metadata_provider');
   } else if (contentType === 'audiobook') {
-    metadataProviderLabel = 'Audiobook Metadata Provider';
+    metadataProviderLabel = t('audiobook_metadata_provider');
   }
 
   if (!visible) return null;
@@ -138,8 +138,8 @@ export const AdvancedFilters = ({
             type="button"
             onClick={onClose}
             className="hover-action rounded-full p-1 transition-colors"
-            aria-label="Close filters"
-            title="Close filters"
+            aria-label={t('close_filters')}
+            title={t('close_filters')}
           >
             <svg
               className="h-4 w-4"
@@ -158,14 +158,14 @@ export const AdvancedFilters = ({
       {isAdmin && (
         <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <DropdownList
-            label="Search Mode"
+            label={t('search_mode')}
             options={SEARCH_MODE_OPTIONS}
             value={searchMode}
             onChange={(value) => {
               const next = Array.isArray(value) ? (value[0] ?? 'direct') : value;
               onSearchModeChange(next === 'universal' ? 'universal' : 'direct');
             }}
-            placeholder="Choose a mode"
+            placeholder={t('choose_mode')}
             widthClassName="w-full"
           />
 
@@ -178,7 +178,7 @@ export const AdvancedFilters = ({
                 const next = Array.isArray(value) ? (value[0] ?? '') : value;
                 onMetadataProviderChange?.(next);
               }}
-              placeholder="Choose a provider"
+              placeholder={t('choose_provider')}
               widthClassName="w-full"
             />
           )}
@@ -196,18 +196,18 @@ export const AdvancedFilters = ({
               value={lang}
               onChange={handleLangChange}
               defaultLanguageCodes={defaultLanguage}
-              label="Language"
+              label={t('language')}
             />
             <DropdownList
-              label="Content"
+              label={t('content')}
               options={CONTENT_OPTIONS}
               value={content}
               onChange={handleContentChange}
-              placeholder="All"
+              placeholder={t('all')}
             />
             <DropdownList
-              label="Formats"
-              placeholder="Any"
+              label={t('formats')}
+              placeholder={t('any')}
               options={formatOptions}
               value={formats}
               onChange={handleFormatsChange}

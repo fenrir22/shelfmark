@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 
+import { t } from '../../i18n';
 import { useSearchMode } from '../../contexts/SearchModeContext';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
@@ -258,7 +259,7 @@ const SettingsModalSession = ({
       onSettingsSaved?.();
       if (result.requiresRestart) {
         setTimeout(() => {
-          onShowToast?.('Some settings require a container restart to take effect', 'info');
+          onShowToast?.(t('some_settings_require_restart'), 'info');
         }, 500);
       }
     } else {
@@ -269,7 +270,7 @@ const SettingsModalSession = ({
   const handleAction = useCallback(
     async (actionKey: string) => {
       if (!selectedTab) {
-        return { success: false, message: 'No tab selected' };
+        return { success: false, message: t('no_tab_selected') };
       }
 
       if (selectedTab === 'security' && actionKey === 'open_users_tab') {
@@ -278,7 +279,7 @@ const SettingsModalSession = ({
           setShowMobileDetail(true);
           onMobileDetailChange(true, handleBack);
         }
-        return { success: true, message: 'Opening Users tab...' };
+        return { success: true, message: t('opening_users_tab') };
       }
       const result = await executeAction(selectedTab, actionKey);
       if (result.success) {
@@ -342,8 +343,8 @@ const SettingsModalSession = ({
 
   if (!isOpen && !isClosing) return null;
 
-  const currentTab = tabs.find((t) => t.name === selectedTab);
-  const currentTabDisplayName = currentTab?.displayName || 'Settings';
+  const currentTab = tabs.find((tab) => tab.name === selectedTab);
+  const currentTabDisplayName = currentTab?.displayName || t('settings');
   const selectedTabSyncKey = isOpen && selectedTab ? selectedTab : null;
   const tabSync = selectedTabSyncKey ? (
     <SettingsModalTabSync
@@ -392,7 +393,7 @@ const SettingsModalSession = ({
           style={{ willChange: 'opacity', contain: 'strict' }}
           onClick={handleClose}
           tabIndex={-1}
-          aria-label="Close settings"
+          aria-label={t('close_settings')}
         />
         <div
           className="relative rounded-xl bg-(--bg) p-8 shadow-2xl"
@@ -415,7 +416,7 @@ const SettingsModalSession = ({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            <span>Loading settings...</span>
+            <span>{t('loading_settings')}</span>
           </div>
         </div>
       </div>
@@ -432,7 +433,7 @@ const SettingsModalSession = ({
           style={{ willChange: 'opacity', contain: 'strict' }}
           onClick={handleClose}
           tabIndex={-1}
-          aria-label="Close settings"
+          aria-label={t('close_settings')}
         />
         <div
           className="relative max-w-md rounded-xl bg-(--bg) p-8 shadow-2xl"
@@ -461,7 +462,7 @@ const SettingsModalSession = ({
               onClick={handleClose}
               className="rounded-lg border border-(--border-muted) bg-(--bg-soft) px-4 py-2 text-sm font-medium transition-colors hover:bg-(--hover-surface)"
             >
-              Close
+              {t('close')}
             </button>
           </div>
         </div>
@@ -479,7 +480,7 @@ const SettingsModalSession = ({
         >
           {!showMobileDetail ? (
             <>
-              <SettingsHeader title="Settings" onClose={handleClose} />
+              <SettingsHeader title={t('settings')} onClose={handleClose} />
               <SettingsSidebar
                 tabs={tabs}
                 groups={groups}
@@ -521,9 +522,9 @@ const SettingsModalSession = ({
         style={{ background: 'var(--bg)' }}
         role="dialog"
         aria-modal="true"
-        aria-label="Settings"
+        aria-label={t('settings')}
       >
-        <SettingsHeader title="Settings" onClose={handleClose} />
+        <SettingsHeader title={t('settings')} onClose={handleClose} />
 
         <div className="flex min-h-0 flex-1">
           <SettingsSidebar
@@ -536,7 +537,7 @@ const SettingsModalSession = ({
 
           {currentTabContent ?? (
             <div className="flex flex-1 items-center justify-center text-sm opacity-60">
-              Select a category to configure
+              {t('select_category_to_configure')}
             </div>
           )}
         </div>

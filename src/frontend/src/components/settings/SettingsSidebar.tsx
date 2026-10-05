@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 
+import { t } from '../../i18n';
 import type { SettingsTab, SettingsGroup } from '../../types/settings';
 
 interface SettingsSidebarProps {
@@ -263,9 +264,9 @@ type SidebarItem =
 // Section headers for organizing the sidebar
 // Can trigger before a group (beforeGroup) or before a tab (beforeTab)
 const SECTION_HEADERS: { beforeGroup?: string; beforeTab?: string; label: string }[] = [
-  { beforeGroup: 'direct_download', label: 'Release Sources' },
-  { beforeTab: 'hardcover', label: 'Metadata Providers' },
-  { beforeTab: 'prowlarr_clients', label: 'Download Clients' },
+  { beforeGroup: 'direct_download', label: t('release_sources') },
+  { beforeTab: 'hardcover', label: t('metadata_providers') },
+  { beforeTab: 'prowlarr_clients', label: t('download_clients') },
 ];
 
 export const SettingsSidebar = ({

@@ -196,8 +196,8 @@ export interface QueryTargetOption {
 }
 
 // App configuration
-// Content type for search (ebook vs audiobook)
-export type ContentType = 'ebook' | 'audiobook';
+// Content type for search (ebook vs audiobook vs manual)
+export type ContentType = 'ebook' | 'audiobook' | 'manuale';
 
 export type RequestPolicyMode = 'download' | 'request_release' | 'request_book' | 'blocked';
 
@@ -315,6 +315,7 @@ export interface AppConfig {
   release_search_timeout: number; // Server-side budget for one release search, in seconds
   settings_enabled: boolean; // Whether config directory is mounted and writable
   onboarding_complete: boolean; // Whether the user has completed initial setup
+  telegram_group_enabled?: boolean; // Whether the Telegram Group (manuals) source is configured
   default_sort: string; // Default sort for direct mode
   metadata_default_sort: string; // Default sort for universal mode (from metadata provider)
 }

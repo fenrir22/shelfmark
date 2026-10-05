@@ -171,6 +171,32 @@ try:
 except ImportError as e:
     logger.warning("Failed to import plugin modules: %s", e)
 
+# Auto-connect Telegram client if configured
+try:
+    from shelfmark.core.config import config
+    from shelfmark.release_sources.telegram.client import client_manager
+
+    if config.get("TELEGRAM_ENABLED", False):
+        api_id = config.get("TELEGRAM_API_ID")
+        api_hash = config.get("TELEGRAM_API_HASH")
+
+        if api_id and api_hash:
+            from shelfmark.config import env
+
+            session_path = str(env.CONFIG_DIR / "telegram_session")
+
+            logger.info("Auto-connecting Telegram client...")
+            connected = client_manager.connect(int(api_id), api_hash, session_path)
+
+            if connected:
+                logger.info("Telegram client connected as @%s", client_manager.username)
+            else:
+                logger.warning(
+                    "Telegram client auto-connection failed (status: %s)", client_manager.status
+                )
+except Exception as e:  # noqa: BLE001 - startup guardrail, must never break import
+    logger.debug("Telegram auto-connection skipped: %s", e)
+
 # Migrate legacy security settings if needed
 _migrate_security_settings()
 
@@ -996,15 +1022,36 @@ def theme_init_js() -> Response:
 
 @app.route("/logo.png")
 def logo() -> Response:
-    """Serve logo from built frontend assets."""
+    """Serve site logo, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("logo")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
     return send_from_directory(FRONTEND_DIST, "logo.png", mimetype="image/png")
 
 
 @app.route("/favicon.ico")
 @app.route("/favico<path:_>")
 def favicon(_: Any = None) -> Response:
-    """Serve favicon from built frontend assets."""
+    """Serve site favicon, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("favicon")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
     return send_from_directory(FRONTEND_DIST, "favicon.ico", mimetype="image/vnd.microsoft.icon")
+
+
+@app.route("/mascot.png")
+def mascot() -> Response:
+    """Serve the bottom-right mascot, preferring a user-uploaded custom asset."""
+    from shelfmark.core.branding import get_custom_asset_mimetype, get_custom_asset_path
+
+    custom = get_custom_asset_path("mascot")
+    if custom is not None:
+        return send_file(custom, mimetype=get_custom_asset_mimetype(custom))
+    return send_from_directory(FRONTEND_DIST, "mascot.png", mimetype="image/png")
 
 
 if _is_debug_enabled():
@@ -1231,6 +1278,10 @@ def api_config() -> Response | tuple[Response, int]:
             get_provider_search_fields,
             get_provider_sort_options,
         )
+        from shelfmark.release_sources.telegram.client import client_manager
+
+        telegram_enabled = bool(app_config.get("TELEGRAM_ENABLED", False))
+        telegram_status = client_manager.status if telegram_enabled else "disabled"
 
         db_user_id = get_session_db_user_id(session)
 
@@ -1307,6 +1358,9 @@ def api_config() -> Response | tuple[Response, int]:
             "release_search_timeout": search_deadline.budget_seconds(),
             "settings_enabled": _is_config_dir_writable(),
             "onboarding_complete": _get_onboarding_complete(),
+            "telegram_group_enabled": bool(app_config.get("TELEGRAM_GROUP_ENABLED", False))
+            and bool(str(app_config.get("TELEGRAM_GROUP_USERNAME", "") or "").strip()),
+            "telegram_status": telegram_status,
             # Default sort orders
             "default_sort": app_config.get(
                 "AA_DEFAULT_SORT", ""
@@ -2994,6 +3048,7 @@ def api_releases() -> Response | tuple[Response, int]:
                 content_type=content_type,
                 source_filters=source_query_filters,
                 user_id=db_user_id,
+                add_offset=offset_id if source_name == "telegram_group" else 0,
             )
 
         provider = request.args.get("provider", "").strip()
@@ -3004,6 +3059,7 @@ def api_releases() -> Response | tuple[Response, int]:
         title_param = request.args.get("title", "").strip()
         author_param = request.args.get("author", "").strip()
         expand_search = request.args.get("expand_search", "").lower() == "true"
+        offset_id = int(request.args.get("offset", "0") or "0")
         # Accept language codes for filtering (comma-separated)
         languages_param = request.args.get("languages", "").strip()
         languages = (

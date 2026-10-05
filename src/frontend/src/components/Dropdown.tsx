@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { t } from '../i18n';
 import { useDismiss } from '../hooks/useDismiss';
 
 const FIXED_DROPDOWN_Z_INDEX = 1050;
@@ -265,7 +266,7 @@ export const Dropdown = ({
             }}
           >
             <span className="min-w-0 flex-1 truncate">
-              {summary ?? <span className="opacity-60">Select an option</span>}
+              {summary ?? <span className="opacity-60">{t('select_an_option')}</span>}
             </span>
             <svg
               className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
