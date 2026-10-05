@@ -12,11 +12,25 @@ services:
       FLASK_PORT: "${FLASK_PORT:-8084}"
       DEBUG: "${DEBUG:-false}"
       OIDC_AUTO_REDIRECT: "${OIDC_AUTO_REDIRECT:-false}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      SHELFMARK_API_KEY: "${SHELFMARK_API_KEY:-}"
+      PROWLARR_TORRENT_CLIENT: "${PROWLARR_TORRENT_CLIENT:-}"
+      TORBOX_API_KEY: "${TORBOX_API_KEY:-}"
+      LIBGEN_SEARCH_ENABLED: "${LIBGEN_SEARCH_ENABLED:-false}"
+      LIBRARY_CHECK_CALIBRE_ENABLED: "${LIBRARY_CHECK_CALIBRE_ENABLED:-false}"
+      CALIBRE_LIBRARY_DB_PATH: "${CALIBRE_LIBRARY_DB_PATH:-/calibre-library/metadata.db}"
+      PROWLARR_MAM_ID: "${PROWLARR_MAM_ID:-}"
+      PROXY_AUTH_DEFAULT_ROLE: "${PROXY_AUTH_DEFAULT_ROLE:-user}"
+      DEFAULT_CONTENT_TYPE: "${DEFAULT_CONTENT_TYPE:-ebook}"
+      BLACKHOLE_DIRECTORY: "${BLACKHOLE_DIRECTORY:-}"
     volumes:
       - ${CONFIG_PATH:-./config}:/config
       - ${BOOKS_PATH:-./books}:/books
       - ${LOG_PATH:-/var/log/shelfmark}:/var/log/shelfmark
       - ${TMP_PATH:-/tmp/shelfmark}:/tmp/shelfmark
+      # Optional: mount Calibre library read-only for library check
+      # - /path/to/calibre-library:/calibre-library:ro
     networks:
       - app-net
 

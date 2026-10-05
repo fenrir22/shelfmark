@@ -1024,7 +1024,7 @@ function App() {
         if (book) {
           setSelectedBook(book);
         } else {
-          showToast(t('Failed to load book details'), 'error');
+          showToast(t('failed_to_load_book_details'), 'error');
         }
       }
     }
@@ -1513,7 +1513,7 @@ function App() {
       await Promise.all([fetchStatus(), refreshActivitySnapshot()]);
     } catch (error) {
       console.error('Cancel failed:', error);
-      showToast('Failed to cancel/clear download', 'error');
+      showToast(t('failed_to_cancel_download'), 'error');
     }
   };
 
@@ -1523,7 +1523,7 @@ function App() {
       await fetchStatus();
     } catch (error) {
       console.error('Retry failed:', error);
-      showToast('Failed to retry download', 'error');
+      showToast(t('failed_to_retry_download'), 'error');
     }
   };
 
@@ -1561,7 +1561,7 @@ function App() {
 
     if (mode === 'blocked') {
       policyTrace('universal.get:block', { bookId: book.id, contentType: normalizedContentType });
-      showToast('This title is unavailable by policy', 'error');
+      showToast(t('title_unavailable_by_policy'), 'error');
       return;
     }
 
@@ -1786,9 +1786,9 @@ function App() {
       try {
         await cancelUserRequest(requestId);
         await refreshActivitySnapshot();
-        showToast('Request cancelled', 'success');
+        showToast(t('request_cancelled'), 'success');
       } catch (error) {
-        showToast(getErrorMessage(error, 'Failed to cancel request'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_cancel_request')), 'error');
       }
     },
     [cancelUserRequest, refreshActivitySnapshot, showToast],
@@ -1803,9 +1803,9 @@ function App() {
       try {
         await rejectSidebarRequest(requestId, adminNote);
         await refreshActivitySnapshot();
-        showToast('Request rejected', 'success');
+        showToast(t('request_rejected'), 'success');
       } catch (error) {
-        showToast(getErrorMessage(error, 'Failed to reject request'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_reject_request')), 'error');
       }
     },
     [refreshActivitySnapshot, requestRoleIsAdmin, rejectSidebarRequest, showToast],
@@ -1828,10 +1828,10 @@ function App() {
         try {
           await fulfilSidebarRequest(requestId, undefined, undefined, true);
           await refreshActivitySnapshot();
-          showToast('Request approved', 'success');
+          showToast(t('request_approved'), 'success');
           await fetchStatus();
         } catch (error) {
-          showToast(getErrorMessage(error, 'Failed to approve request'), 'error');
+          showToast(getErrorMessage(error, t('failed_to_approve_request')), 'error');
         }
         return;
       }
@@ -1842,10 +1842,10 @@ function App() {
         try {
           await fulfilSidebarRequest(requestId, record.release_data || undefined);
           await refreshActivitySnapshot();
-          showToast('Request approved', 'success');
+          showToast(t('request_approved'), 'success');
           await fetchStatus();
         } catch (error) {
-          showToast(getErrorMessage(error, 'Failed to approve request'), 'error');
+          showToast(getErrorMessage(error, t('failed_to_approve_request')), 'error');
         }
         return;
       }
@@ -1880,12 +1880,12 @@ function App() {
           buildReleaseDataFromMetadataRelease(book, release, toContentType(releaseContentType)),
         );
         await refreshActivitySnapshot();
-        showToast(`Request approved: ${book.title || 'Untitled'}`, 'success');
+        showToast(t('request_approved_with_title', { title: book.title || t('untitled') }), 'success');
         setFulfillingRequest(null);
         await fetchStatus();
       } catch (error) {
         console.error('Browse fulfil failed:', error);
-        showToast(getErrorMessage(error, 'Failed to fulfil request'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_fulfil_request')), 'error');
         throw error;
       }
     },

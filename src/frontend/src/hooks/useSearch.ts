@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { DEFAULT_SUPPORTED_FORMATS } from '../data/languages';
+import { t } from '../i18n';
 import { searchBooks, searchMetadata, AuthenticationError } from '../services/api';
 import type { Book, AppConfig, AdvancedFilterState, ContentType, SearchMode } from '../types';
 import { LANGUAGE_OPTION_DEFAULT } from '../utils/languageFilters';
@@ -262,7 +263,7 @@ export function useSearch(options: UseSearchOptions): UseSearchReturn {
             setTotalFound(0);
             setResultsSourceUrl(undefined);
             setResultsSourceTitle(undefined);
-            showToast('No results found', 'error');
+            showToast(t('no_results_found'), 'error');
           }
         } catch (error) {
           handleSearchError(error, 'Search failed');
@@ -294,7 +295,7 @@ export function useSearch(options: UseSearchOptions): UseSearchReturn {
           setBooks(sorted);
           setDirectTotalResults(totalResults);
         } else {
-          showToast('No results found', 'error');
+          showToast(t('no_results_found'), 'error');
           setDirectTotalResults(null);
         }
       } catch (error) {

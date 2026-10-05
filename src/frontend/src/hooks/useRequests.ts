@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 
+import { t } from '../i18n';
 import {
   cancelRequest as cancelUserRequest,
   fulfilAdminRequest,
@@ -33,7 +34,7 @@ export const useRequests = ({ isAdmin }: UseRequestsOptions): UseRequestsReturn 
     try {
       await cancelUserRequest(id);
     } catch (err) {
-      const message = toErrorMessage(err, 'Failed to cancel request');
+      const message = toErrorMessage(err, t('failed_to_cancel_request'));
       throw new Error(message, { cause: err });
     }
   }, []);
@@ -56,7 +57,7 @@ export const useRequests = ({ isAdmin }: UseRequestsOptions): UseRequestsReturn 
           manual_approval: manualApproval,
         });
       } catch (err) {
-        const message = toErrorMessage(err, 'Failed to fulfil request');
+        const message = toErrorMessage(err, t('failed_to_fulfil_request'));
         throw new Error(message, { cause: err });
       }
     },
@@ -74,7 +75,7 @@ export const useRequests = ({ isAdmin }: UseRequestsOptions): UseRequestsReturn 
           admin_note: adminNote,
         });
       } catch (err) {
-        const message = toErrorMessage(err, 'Failed to reject request');
+        const message = toErrorMessage(err, t('failed_to_reject_request'));
         throw new Error(message, { cause: err });
       }
     },

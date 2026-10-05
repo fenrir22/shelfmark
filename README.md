@@ -9,12 +9,14 @@
 
 ## 🔀 Fork: fenrir22/shelfmark
 
-This is a personal fork of [calibrain/shelfmark](https://github.com/calibrain/shelfmark) with the following additions:
+This is a personal fork of [calibrain/shelfmark](https://github.com/calibrain/shelfmark) based on **upstream v1.4.0 (`d2b4a02`)** with the following additions:
 
-- **Telegram release source** - Search and download audiobooks directly from Telegram bots via an MTProto user client. Includes full setup flow (API credentials, phone verification, 2FA), search caching, and download with archive extraction. See [Telegram settings](shelfmark/release_sources/telegram/settings.py).
-- **Italian translation (i18n)** - New lightweight i18n layer and Italian localization for the frontend.
-- **External bypasser improvements** - Better cookie handling for the external Cloudflare bypasser.
-- **Deployment config** - Root `docker-compose.yml`, `.env.example`, and this fork's own README.
+- **Telegram MTProto release source** - Search and download audiobooks (via bot) and manuals/ebooks (via silent group search) directly from Telegram via an MTProto user client. Includes full setup flow (API ID/hash, phone verification, 2FA), session persistence in `/config/telegram_session`, search caching, and download with archive extraction. See [Telegram settings](shelfmark/release_sources/telegram/settings.py).
+- **Italian translation (i18n)** - Lightweight frontend i18n layer (`src/frontend/src/i18n/`) with full Italian localization (`it.ts`, 520+ keys), including Telegram, new upstream v1.4.0 features (Libgen, TorBox, Calibre library check, downloads sort) and error messages.
+- **Site branding** - Custom logo/favicon/mascot upload stored in `/config/assets`.
+- **Deployment config** - Root `docker-compose.yml`, `.env.example`, and GHCR image.
+
+> Note: the old fork-specific External Bypasser cookie workarounds were intentionally dropped. The bypasser behavior is 100% upstream v1.4.0 (`shelfmark/bypass/` + `cookie_store`).
 
 Documentation for the Telegram source is in the settings page under **Settings → Telegram**.
 
