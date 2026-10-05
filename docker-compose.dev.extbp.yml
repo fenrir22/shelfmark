@@ -1,13 +1,15 @@
-# Local development - External bypasser variant (lite)
+# Local development - External bypasser variant
 services:
-  shelfmark-lite-dev:
+  shelfmark-dev:
     extends:
-      file: ./compose/docker-compose.lite.yml
-      service: shelfmark-lite
+      file: ./compose/docker-compose.yml
+      service: shelfmark
     build:
       context: .
       dockerfile: Dockerfile
-      target: shelfmark-lite
+      target: shelfmark
+    cap_add:
+      - SYS_PTRACE
     environment:
       DEBUG: true
       EXT_BYPASSER_URL: http://flaresolverr:8191
@@ -18,6 +20,8 @@ services:
       - ./.local/books:/books
       - ./.local/log:/var/log/shelfmark
       - ./.local/tmp:/tmp/shelfmark
+      - ./shelfmark:/app/shelfmark:ro
+      - ./frontend-dist:/app/frontend-dist:ro
       # Required for torrent / usenet - path must match your download client's volume exactly
       # - /path/to/downloads:/path/to/downloads
 

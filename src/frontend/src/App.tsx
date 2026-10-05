@@ -8,6 +8,7 @@ import { ConfigSetupBanner } from './components/ConfigSetupBanner';
 import { DetailsModal } from './components/DetailsModal';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
+import { Mascot } from './components/Mascot';
 import { MetadataConfigSession } from './components/MetadataConfigSession';
 import { OnBehalfConfirmationModal } from './components/OnBehalfConfirmationModal';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -34,7 +35,7 @@ import { useAuth } from './hooks/useAuth';
 import { useDownloadTracking } from './hooks/useDownloadTracking';
 import { useLatestCallback } from './hooks/useLatestCallback';
 import { useMediaQuery } from './hooks/useMediaQuery';
-import { useMountEffect } from './hooks/useMountEffect';
+import { useDependencyEffect, useMountEffect } from './hooks/useMountEffect';
 import { useRealtimeStatus } from './hooks/useRealtimeStatus';
 import { useRequestPolicy } from './hooks/useRequestPolicy';
 import { useRequests } from './hooks/useRequests';
@@ -43,6 +44,7 @@ import { primeSettingsCache } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
 import { useExternalHashChange, useSyncUrlSearchHash, useUrlSearch } from './hooks/useUrlSearch';
 import { primeUsersCache } from './hooks/useUsersFetch';
+import { t } from './i18n';
 import { LoginPage } from './pages/LoginPage';
 import {
   getSourceRecordInfo,
@@ -191,17 +193,16 @@ const getSubmissionSuccessMessage = (
       const title =
         typeof queuedDownloads[0].title === 'string' && queuedDownloads[0].title.trim()
           ? queuedDownloads[0].title.trim()
-          : 'Untitled';
-      return `Download queued: ${title}`;
+          : t('untitled');
+      return t('download_queued', { title });
     }
-    return 'Downloads queued';
+    return t('downloads_queued');
   }
 
-  return 'Download queued and request submitted';
+  return t('download_queued_and_request_submitted');
 };
 
-const CONFIRMED_DOWNLOAD_INTERRUPTED_MESSAGE =
-  'Download queued, but the proxy interrupted the response. Status will refresh shortly.';
+const CONFIRMED_DOWNLOAD_INTERRUPTED_MESSAGE = t('download_queued_proxy_interrupted');
 
 type CombinedSelectionState = {
   phase: 'ebook' | 'audiobook';
@@ -330,19 +331,30 @@ function App() {
 
   const requestRoleIsAdmin = requestPolicy?.is_admin ?? false;
 
+  // Whether the Telegram Group (manuals) source is configured on the server.
+  const [telegramGroupEnabled, setTelegramGroupEnabled] = useState(false);
+
   // Compute which content types this user is allowed to search for.
   // If a content type's default policy mode is 'blocked', hide it from the dropdown.
   const allowedContentTypes = useMemo((): ContentType[] => {
+    const types: ContentType[] = [];
     // If policy not loaded yet or user is admin, allow everything
     if (!requestPolicy || requestRoleIsAdmin || !requestsPolicyEnabled) {
-      return ['ebook', 'audiobook'];
+      types.push('ebook', 'audiobook');
+    } else {
+      if (getDefaultMode('ebook') !== 'blocked') types.push('ebook');
+      if (getDefaultMode('audiobook') !== 'blocked') types.push('audiobook');
     }
-    const types: ContentType[] = [];
-    if (getDefaultMode('ebook') !== 'blocked') types.push('ebook');
-    if (getDefaultMode('audiobook') !== 'blocked') types.push('audiobook');
-    // If both are blocked, still show both (user can see results, just can't download)
+    if (telegramGroupEnabled) types.push('manuale');
+    // If everything is blocked, still show the base types (user can see results, just can't download)
     return types.length > 0 ? types : ['ebook', 'audiobook'];
-  }, [requestPolicy, requestRoleIsAdmin, requestsPolicyEnabled, getDefaultMode]);
+  }, [
+    requestPolicy,
+    requestRoleIsAdmin,
+    requestsPolicyEnabled,
+    getDefaultMode,
+    telegramGroupEnabled,
+  ]);
 
   const effectiveContentType = useMemo(
     () =>
@@ -564,7 +576,7 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to load admin users:', error);
-      setAdminUsersError('Failed to load users');
+      setAdminUsersError(t('failed_to_load_users'));
     } finally {
       setIsAdminUsersLoading(false);
     }
@@ -624,6 +636,11 @@ function App() {
   const [configuredCombinedMetadataProvider, setConfiguredCombinedMetadataProvider] = useState<
     string | null
   >(null);
+  useDependencyEffect(() => {
+    if (config?.search_page_title) {
+      document.title = config.search_page_title;
+    }
+  }, [config?.search_page_title]);
   // Falls back to the stored "Search By" default from the user's last-used mode;
   // an invalid/stale value is harmless since effectiveActiveQueryTarget below re-validates
   // it against the current queryTargets once config/search fields are known.
@@ -843,6 +860,7 @@ function App() {
         setConfiguredMetadataProvider(metadataProviderState.configured_provider);
         setConfiguredAudiobookMetadataProvider(metadataProviderState.configured_provider_audiobook);
         setConfiguredCombinedMetadataProvider(metadataProviderState.configured_provider_combined);
+        setTelegramGroupEnabled(cfg.telegram_group_enabled === true);
 
         // Show onboarding modal on first run (settings enabled but not completed yet)
         if (mode === 'initial' && cfg.settings_enabled && !cfg.onboarding_complete) {
@@ -1006,7 +1024,7 @@ function App() {
         if (book) {
           setSelectedBook(book);
         } else {
-          showToast('Failed to load book details', 'error');
+          showToast(t('Failed to load book details'), 'error');
         }
       }
     }
@@ -1025,7 +1043,7 @@ function App() {
         return true;
       } catch (error) {
         console.error('Request creation failed:', error);
-        showToast(getErrorMessage(error, 'Failed to create request'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_create_request')), 'error');
         if (isPolicyGuardError(error)) {
           await refreshRequestPolicy({ force: true });
         }
@@ -1070,7 +1088,7 @@ function App() {
         requestPayloads,
         requestPayloads.length === 1
           ? getRequestSuccessMessage(requestPayloads[0])
-          : 'Requests submitted',
+          : t('requests_submitted'),
       );
       if (!success) return false;
 
@@ -1093,8 +1111,10 @@ function App() {
   }, [effectiveContentType, getDefaultMode]);
 
   const getCombinedSelectionPhases = useCallback(
-    (state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>): ContentType[] => {
-      const phases: ContentType[] = [];
+    (
+      state: Pick<CombinedSelectionState, 'ebookMode' | 'audiobookMode'>,
+    ): Array<'ebook' | 'audiobook'> => {
+      const phases: Array<'ebook' | 'audiobook'> = [];
       if (state.ebookMode !== 'request_book') {
         phases.push('ebook');
       }
@@ -1140,7 +1160,7 @@ function App() {
             selected: false,
           });
           const listName = searchFieldLabels['hardcover_list'];
-          showToast(`Removed from ${listName || 'list'}`, 'info');
+          showToast(t('removed_from_list', { list: listName || t('list') }), 'info');
         }
       })
       .catch(() => undefined);
@@ -1172,7 +1192,7 @@ function App() {
             await refreshRequestPolicy({ force: true });
             return;
           }
-          showToast('Download blocked by policy', 'error');
+          showToast(t('download_blocked_by_policy'), 'error');
           await refreshRequestPolicy({ force: true });
           return;
         }
@@ -1189,7 +1209,7 @@ function App() {
         } catch (verificationError) {
           console.warn('Failed to verify download after response error:', verificationError);
         }
-        showToast(getErrorMessage(error, 'Failed to queue download'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_queue_download')), 'error');
         throw error;
       }
     },
@@ -1271,7 +1291,7 @@ function App() {
             await refreshRequestPolicy({ force: true });
             return;
           }
-          showToast('Download blocked by policy', 'error');
+          showToast(t('download_blocked_by_policy'), 'error');
           await refreshRequestPolicy({ force: true });
           return;
         }
@@ -1291,7 +1311,7 @@ function App() {
             verificationError,
           );
         }
-        showToast(getErrorMessage(error, 'Failed to queue download'), 'error');
+        showToast(getErrorMessage(error, t('failed_to_queue_download')), 'error');
         throw error;
       }
     },
@@ -1463,7 +1483,7 @@ function App() {
 
     if (mode === 'blocked') {
       policyTrace('direct.action:block', { bookId: book.id, mode });
-      showToast('Download blocked by policy', 'error');
+      showToast(t('download_blocked_by_policy'), 'error');
       await refreshRequestPolicy({ force: true });
       return;
     }
@@ -2802,6 +2822,9 @@ function App() {
         }}
         onShowToast={showToast}
       />
+
+      {/* Mascot - fixed bottom-right decoration */}
+      <Mascot />
     </SearchModeProvider>
   );
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { shortBuildId } from '../utils/buildVersion';
 
 interface FooterProps {
@@ -40,7 +41,7 @@ export const Footer = ({ buildVersion, releaseVersion, debug }: FooterProps) => 
             className="rounded-sm px-1.5 py-0.5 text-xs opacity-60"
             style={{ background: 'var(--border-muted)' }}
           >
-            Debug
+            {t('debug')}
           </span>
         )}
       </div>
