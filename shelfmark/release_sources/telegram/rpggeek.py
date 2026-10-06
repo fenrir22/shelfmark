@@ -184,10 +184,13 @@ def _enrich_via_openlibrary(releases: list, pending: list[tuple[int, str]]) -> i
 
     attached = 0
     for index, normalized in pending[:MAX_FALLBACK_ITEMS]:
+        # The catalogue is English: translate known Italian titles first.
+        aliased = apply_alias(normalized)
+        query_text = aliased if aliased != normalized else getattr(
+            releases[index], "title", ""
+        )
         try:
-            url = fetch_cover_url(
-                getattr(releases[index], "title", ""), normalized, normalize_title
-            )
+            url = fetch_cover_url(query_text, normalized, normalize_title)
         except Exception as exc:  # noqa: BLE001 - enrichment must never break a search
             logger.warning("Open Library cover enrichment failed: %s", exc)
             continue

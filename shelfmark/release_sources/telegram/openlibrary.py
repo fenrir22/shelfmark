@@ -122,6 +122,10 @@ def clean_title_for_search(stem: object) -> str:
             continue
         if lowered in NOISE_TOKENS:
             continue
+        if len(lowered) <= 1:
+            # Single letters (e.g. the "s" in "player s handbook") make
+            # Open Library return zero results: drop them from the query.
+            continue
         if re.fullmatch(r"(19|20)\d{2}", lowered):
             continue
         if re.fullmatch(r"\d+(st|nd|rd|th)?", lowered):
@@ -167,7 +171,7 @@ def fetch_cover_url(
             response = requests.get(
                 SEARCH_URL,
                 params={
-                    "title": cleaned,
+                    "q": cleaned,
                     "limit": str(MAX_RESULTS),
                     "fields": "key,title,author_name,cover_i",
                     "language": "eng",

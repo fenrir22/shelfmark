@@ -55,7 +55,7 @@ def test_fetch_cover_url_match(monkeypatch):
     title = "D&D_5e_Player's_Handbook_Manuale_del_Giocatore_HQ_09_2021"
     url = fetch_cover_url(title, normalize_title(title), normalize_title)
     assert url == "https://covers.openlibrary.org/b/id/15223146-M.jpg"
-    assert calls[0]["title"] == "D&D 5e Player's Handbook Manuale del Giocatore"
+    assert calls[0]["q"] == "D&D 5e Player's Handbook Manuale del Giocatore"
 
 
 def test_fetch_cover_url_rejects_wrong_book(monkeypatch):
