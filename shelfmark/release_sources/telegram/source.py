@@ -26,6 +26,7 @@ from shelfmark.release_sources import (
     ReleaseProtocol,
     ReleaseSource,
     SourceActionButton,
+    SourceUnavailableError,
     register_source,
 )
 
@@ -582,16 +583,26 @@ class TelegramGroupSource(TelegramSource):
 
         _enforce_rate_limit()
 
+        group_entity = client_manager.resolve_bot_entity(group)
+        if group_entity is None and group.strip().isdigit():
+            # Bare numeric ids are usually pasted without the -100 channel
+            # prefix (Telethon reads them as users and fails). Retry with it.
+            group_entity = client_manager.resolve_bot_entity(f"-100{group.strip()}")
+        if group_entity is None:
+            group_entity = client_manager.resolve_dialog_by_title(group)
+        if group_entity is None:
+            message = (
+                f"Could not resolve Telegram group '{group_raw}'. Use the @username, "
+                "an invite link, the exact group title, or the full numeric ID "
+                "including the -100 prefix (e.g. -1001503406491). The connected "
+                "account must already be a member of the group."
+            )
+            _emit_status(message, phase="error")
+            logger.warning("Could not resolve Telegram group: %s", group_raw)
+            raise SourceUnavailableError(message)
+
         try:
             _emit_status("Searching Telegram group history...", phase="searching")
-
-            group_entity = client_manager.resolve_bot_entity(group)
-            if group_entity is None:
-                group_entity = client_manager.resolve_dialog_by_title(group)
-            if group_entity is None:
-                _emit_status(f"Group not found: {group_raw}", phase="error")
-                logger.warning("Could not resolve Telegram group: %s", group_raw)
-                return []
 
             search_limit = _config_int("TELEGRAM_GROUP_SEARCH_LIMIT", 50)
 

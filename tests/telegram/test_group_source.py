@@ -135,6 +135,67 @@ def test_get_record_rejects_missing_or_mismatched_document(monkeypatch):
     assert source.get_record("tg:999:42:123") is None
 
 
+def _make_search_mocks(monkeypatch, tg_source, group="@rpg_manuals", channel=""):
+    def fake_config_text(key):
+        if key == "TELEGRAM_GROUP_USERNAME":
+            return group
+        if key == "TELEGRAM_GROUP_CHANNEL":
+            return channel
+        return ""
+
+    monkeypatch.setattr(tg_source, "_config_text", fake_config_text)
+    monkeypatch.setattr(tg_source, "_config_int", lambda key, default=50: default)
+    monkeypatch.setattr(tg_source, "get_cached_results", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "cache_results", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "_emit_status", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "_enforce_rate_limit", lambda: None)
+
+
+def test_search_retries_bare_numeric_id_with_channel_prefix(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source = TelegramGroupSource()
+    entity = object()
+    attempted = []
+
+    def fake_resolve(ref):
+        attempted.append(ref)
+        return entity if ref == "-1001503406491" else None
+
+    _make_search_mocks(monkeypatch, tg_source, group="1503406491")
+    monkeypatch.setattr(source, "is_available", lambda: True)
+    monkeypatch.setattr(tg_source.client_manager, "resolve_bot_entity", fake_resolve)
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", lambda *a, **k: [])
+
+    book = BookMetadata(provider="test", provider_id="123", title="Dune")
+    plan = SimpleNamespace(primary_query="Dune")
+
+    assert source.search(book, plan, content_type="manuale") == []
+    assert attempted == ["1503406491", "-1001503406491"]
+
+
+def test_search_raises_when_group_unresolvable(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+    from shelfmark.release_sources import SourceUnavailableError
+
+    source = TelegramGroupSource()
+
+    _make_search_mocks(monkeypatch, tg_source, group="@no_such_group_xyz")
+    monkeypatch.setattr(source, "is_available", lambda: True)
+    monkeypatch.setattr(tg_source.client_manager, "resolve_bot_entity", lambda ref: None)
+    monkeypatch.setattr(tg_source.client_manager, "resolve_dialog_by_title", lambda t: None)
+
+    book = BookMetadata(provider="test", provider_id="123", title="Dune")
+    plan = SimpleNamespace(primary_query="Dune")
+
+    try:
+        source.search(book, plan, content_type="manuale")
+    except SourceUnavailableError as exc:
+        assert "@no_such_group_xyz" in str(exc)
+    else:
+        raise AssertionError("expected SourceUnavailableError")
+
+
 def test_is_available_requires_enabled_and_connected(monkeypatch):
     import shelfmark.release_sources.telegram.source as tg_source
 

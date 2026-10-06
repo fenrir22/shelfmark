@@ -330,9 +330,11 @@ def telegram_group_settings() -> list[SettingsField]:
             label="Group username",
             placeholder="e.g. @rpg_manuals",
             description=(
-                "The group to search. Use the username (with or without @), a numeric chat ID, "
-                "an invite link, or the group's display title (e.g. 'The Amber Room request "
-                "and submissions'). The connected account must already be a member of the group."
+                "The group to search. Use the username (with or without @), an invite "
+                "link, or the group's display title. A numeric chat ID must include the "
+                "full -100 prefix (e.g. -1001503406491): a bare number is read as a "
+                "user, not a group. The connected account must already be a member of "
+                "the group."
             ),
             required=True,
             env_supported=True,
@@ -342,8 +344,9 @@ def telegram_group_settings() -> list[SettingsField]:
             label="Channel / topic name",
             placeholder="e.g. request and submission",
             description=(
-                "Optional: the channel or forum topic inside the group that contains the files "
-                "(e.g. '#request and submission'). Only that channel/topic is searched. "
+                "Optional: the channel or forum topic inside the group that contains the "
+                "files (e.g. '#request and submission'). A bare number is read as a "
+                "topic/thread message ID and restricts the search to that thread. "
                 "Leave empty to search the whole group."
             ),
             required=False,

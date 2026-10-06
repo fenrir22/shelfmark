@@ -262,7 +262,8 @@ export function useSearch(options: UseSearchOptions): UseSearchReturn {
             setDirectTotalResults(null);
             setResultsSourceUrl(undefined);
             setResultsSourceTitle(undefined);
-            showToast(t('no_results_found'), 'error');
+            const backendError = response.errors?.[0];
+            showToast(backendError || t('no_results_found'), 'error');
           }
         } catch (error) {
           handleSearchError(error, 'Search failed');

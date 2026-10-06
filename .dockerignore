@@ -2,6 +2,7 @@
 .github
 .vscode
 .local
+.local-test/
 .mypy_cache
 README_images
 .gitignore

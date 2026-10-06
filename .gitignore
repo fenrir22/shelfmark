@@ -241,3 +241,4 @@ CLAUDE.md
 .playwright-mcp/
 frontend-dist/
 node_modules/
+.local-test/
