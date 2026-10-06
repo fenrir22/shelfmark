@@ -19,12 +19,15 @@ This document lists all configuration options that can be set via environment va
 - [AudiobookBay](#audiobookbay)
 - [Libgen Search](#libgen-search)
 - [IRC](#irc)
+- [Telegram](#telegram)
+- [Telegram Group](#telegram-group)
 - [Download Clients](#download-clients)
 - [Metadata Providers](#metadata-providers)
   - [Hardcover](#metadata-providers-hardcover)
   - [Open Library](#metadata-providers-open-library)
   - [Google Books](#metadata-providers-google-books)
   - [Moly.hu](#metadata-providers-moly.hu)
+  - [RPGGeek](#metadata-providers-rpggeek)
 - [Direct Download](#direct-download)
   - [Download Sources](#direct-download-download-sources)
   - [Cloudflare Bypass](#direct-download-cloudflare-bypass)
@@ -255,6 +258,8 @@ Seconds since the last WireGuard handshake before the healthcheck bounces the tu
 | `SEARCH_PAGE_TITLE` | Title shown above the main search box on the homepage. | string | `Shelfmark` |
 | `CALIBRE_WEB_URL` | Adds a navigation button to your book library (Calibre-Web Automated, Grimmory, etc). | string | _none_ |
 | `AUDIOBOOK_LIBRARY_URL` | Adds a separate navigation button for your audiobook library (Audiobookshelf, Plex, etc). When both URLs are set, icons are shown instead of text. | string | _none_ |
+| `LIBRARY_CHECK_CALIBRE_ENABLED` | Read the Calibre metadata.db and mark search results you already own, so you do not download a second copy. Read only, nothing is written to the library. | boolean | `false` |
+| `CALIBRE_LIBRARY_DB_PATH` | Path to metadata.db as seen from inside the Shelfmark container. Mount the Calibre library folder read-only, e.g. /path/to/calibre-library:/calibre-library:ro. | string | `/calibre-library/metadata.db` |
 | `SUPPORTED_FORMATS` | Book formats to include in search results. ZIP/RAR archives are extracted automatically and book files are used if found. | string (comma-separated) | `epub,mobi,azw3,fb2,djvu,cbz,cbr` |
 | `SUPPORTED_AUDIOBOOK_FORMATS` | Audiobook formats to include in search results. ZIP/RAR archives are extracted automatically and audiobook files are used if found. | string (comma-separated) | `m4b,mp3,m4a,mp4,flac,ogg,wma,aac,wav,opus,zip,rar` |
 
@@ -288,6 +293,24 @@ Adds a separate navigation button for your audiobook library (Audiobookshelf, Pl
 - **Type:** string
 - **Default:** _none_
 
+#### `LIBRARY_CHECK_CALIBRE_ENABLED`
+
+**Mark books already in your Calibre library**
+
+Read the Calibre metadata.db and mark search results you already own, so you do not download a second copy. Read only, nothing is written to the library.
+
+- **Type:** boolean
+- **Default:** `false`
+
+#### `CALIBRE_LIBRARY_DB_PATH`
+
+**Calibre metadata.db path**
+
+Path to metadata.db as seen from inside the Shelfmark container. Mount the Calibre library folder read-only, e.g. /path/to/calibre-library:/calibre-library:ro.
+
+- **Type:** string
+- **Default:** `/calibre-library/metadata.db`
+
 #### `SUPPORTED_FORMATS`
 
 **Supported Book Formats**
@@ -315,7 +338,7 @@ Audiobook formats to include in search results. ZIP/RAR archives are extracted a
 | `SEARCH_MODE` | How you want to search for and download books. | string (choice) | `universal` |
 | `BOOK_LANGUAGE` | Default language filter for searches. Users can override this for their own account. | string (comma-separated) | `en` |
 | `DEFAULT_CONTENT_TYPE` | Which tab the search page opens on. Users can override this for their own account, and a browser that has already picked a tab keeps its choice. | string (choice) | `ebook` |
-| `AA_DEFAULT_SORT` | Default sort order for search results. | string (choice) | `relevance` |
+| `AA_DEFAULT_SORT` | Default sort order for search results. | string (choice) | _empty string_ |
 | `SHOW_RELEASE_SOURCE_LINKS` | Show clickable release-source links in release and details modals. Metadata provider links stay enabled. | boolean | `true` |
 | `SHOW_COMBINED_SELECTOR` | Show the option to search for and download both a book and audiobook together. | boolean | `true` |
 | `FORCE_COMBINED_SEARCH` | Force combined search whenever it's available. Locks the combined toggle on. | boolean | `false` |
@@ -1668,6 +1691,161 @@ How long to keep cached search results before they expire.
 
 </details>
 
+## Telegram
+
+| Variable | Description | Type | Default |
+|----------|-------------|------|---------|
+| `TELEGRAM_ENABLED` | Enable the Telegram release source. | boolean | `false` |
+| `TELEGRAM_API_ID` | Your Telegram API ID (numeric). | string | _none_ |
+| `TELEGRAM_API_HASH` | Your Telegram API Hash. | string (secret) | _none_ |
+| `TELEGRAM_PHONE` | Phone number associated with your Telegram account (with country code). | string | _none_ |
+| `TELEGRAM_BOT_USERNAME` | The username of the Telegram bot to search through (with or without @). | string | _none_ |
+| `TELEGRAM_SEARCH_COMMAND` | How to format search queries sent to the bot. Use {query} as placeholder for the search term. Leave empty to send the query as a plain message. | string | _none_ |
+| `TELEGRAM_RESPONSE_TIMEOUT` | How long to wait for the bot to respond to a search query. | string | _none_ |
+| `TELEGRAM_CACHE_TTL` | How long to cache search results. Default: 604800 (7 days). Set to 0 for forever. | string | _none_ |
+
+<details>
+<summary>Detailed descriptions</summary>
+
+#### `TELEGRAM_ENABLED`
+
+**Enable Telegram**
+
+Enable the Telegram release source.
+
+- **Type:** boolean
+- **Default:** `false`
+
+#### `TELEGRAM_API_ID`
+
+**API ID**
+
+Your Telegram API ID (numeric).
+
+- **Type:** string
+- **Default:** _none_
+- **Required:** Yes
+
+#### `TELEGRAM_API_HASH`
+
+**API Hash**
+
+Your Telegram API Hash.
+
+- **Type:** string (secret)
+- **Default:** _none_
+- **Required:** Yes
+
+#### `TELEGRAM_PHONE`
+
+**Phone number**
+
+Phone number associated with your Telegram account (with country code).
+
+- **Type:** string
+- **Default:** _none_
+- **Required:** Yes
+
+#### `TELEGRAM_BOT_USERNAME`
+
+**Bot username**
+
+The username of the Telegram bot to search through (with or without @).
+
+- **Type:** string
+- **Default:** _none_
+- **Required:** Yes
+
+#### `TELEGRAM_SEARCH_COMMAND`
+
+**Search command format**
+
+How to format search queries sent to the bot. Use {query} as placeholder for the search term. Leave empty to send the query as a plain message.
+
+- **Type:** string
+- **Default:** _none_
+
+#### `TELEGRAM_RESPONSE_TIMEOUT`
+
+**Response timeout (seconds)**
+
+How long to wait for the bot to respond to a search query.
+
+- **Type:** string
+- **Default:** _none_
+
+#### `TELEGRAM_CACHE_TTL`
+
+**Cache duration (seconds)**
+
+How long to cache search results. Default: 604800 (7 days). Set to 0 for forever.
+
+- **Type:** string
+- **Default:** _none_
+
+</details>
+
+## Telegram Group
+
+| Variable | Description | Type | Default |
+|----------|-------------|------|---------|
+| `TELEGRAM_GROUP_ENABLED` | Enable silent search of a Telegram group's history. | boolean | `false` |
+| `TELEGRAM_GROUP_USERNAME` | The group to search. Use the username (with or without @), an invite link, or the group's display title. A numeric chat ID must include the full -100 prefix (e.g. -1001503406491): a bare number is read as a user, not a group. The connected account must already be a member of the group. | string | _none_ |
+| `TELEGRAM_GROUP_CHANNEL` | Optional: the channel or forum topic inside the group that contains the files (e.g. '#request and submission'). A bare number is read as a topic/thread message ID and restricts the search to that thread. Leave empty to search the whole group. | string | _none_ |
+| `TELEGRAM_GROUP_SEARCH_LIMIT` | Maximum number of matching messages to consider per search. | string | _none_ |
+| `RPGEEK_COVERS_ENABLED` | Look up cover images on RPGGeek for manuale results. Requires an RPGEEK_API_TOKEN set on the RPGGeek provider page; without a token this does nothing. | boolean | `true` |
+
+<details>
+<summary>Detailed descriptions</summary>
+
+#### `TELEGRAM_GROUP_ENABLED`
+
+**Enable Telegram Group search**
+
+Enable silent search of a Telegram group's history.
+
+- **Type:** boolean
+- **Default:** `false`
+
+#### `TELEGRAM_GROUP_USERNAME`
+
+**Group username**
+
+The group to search. Use the username (with or without @), an invite link, or the group's display title. A numeric chat ID must include the full -100 prefix (e.g. -1001503406491): a bare number is read as a user, not a group. The connected account must already be a member of the group.
+
+- **Type:** string
+- **Default:** _none_
+- **Required:** Yes
+
+#### `TELEGRAM_GROUP_CHANNEL`
+
+**Channel / topic name**
+
+Optional: the channel or forum topic inside the group that contains the files (e.g. '#request and submission'). A bare number is read as a topic/thread message ID and restricts the search to that thread. Leave empty to search the whole group.
+
+- **Type:** string
+- **Default:** _none_
+
+#### `TELEGRAM_GROUP_SEARCH_LIMIT`
+
+**Max results**
+
+Maximum number of matching messages to consider per search.
+
+- **Type:** string
+- **Default:** _none_
+
+#### `RPGEEK_COVERS_ENABLED`
+
+**RPGGeek covers for manuals**
+
+Look up cover images on RPGGeek for manuale results. Requires an RPGEEK_API_TOKEN set on the RPGGeek provider page; without a token this does nothing.
+
+- **Type:** boolean
+- **Default:** `true`
+
+</details>
+
 ## Download Clients
 
 | Variable | Description | Type | Default |
@@ -2286,6 +2464,36 @@ Enable Moly.hu as a metadata provider for book searches
 
 - **Type:** boolean
 - **Default:** `false`
+
+</details>
+
+### Metadata Providers: RPGGeek
+
+| Variable | Description | Type | Default |
+|----------|-------------|------|---------|
+| `RPGEEK_ENABLED` | Enable RPGGeek as a metadata provider | boolean | `false` |
+| `RPGEEK_API_TOKEN` | Bearer token for the BoardGameGeek/RPGGeek XML API. Register your application at boardgamegeek.com/applications (approval may take a week or more). Also enables manual cover lookup. | string (secret) | _none_ |
+
+<details>
+<summary>Detailed descriptions</summary>
+
+#### `RPGEEK_ENABLED`
+
+**Enable RPGGeek**
+
+Enable RPGGeek as a metadata provider
+
+- **Type:** boolean
+- **Default:** `false`
+
+#### `RPGEEK_API_TOKEN`
+
+**API Token**
+
+Bearer token for the BoardGameGeek/RPGGeek XML API. Register your application at boardgamegeek.com/applications (approval may take a week or more). Also enables manual cover lookup.
+
+- **Type:** string (secret)
+- **Default:** _none_
 
 </details>
 

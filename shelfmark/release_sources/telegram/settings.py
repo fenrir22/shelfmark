@@ -366,20 +366,8 @@ def telegram_group_settings() -> list[SettingsField]:
             default=True,
             description=(
                 "Look up cover images on RPGGeek for manuale results. Requires an "
-                "RPGEEK_API_TOKEN below; without a token this does nothing."
+                "RPGEEK_API_TOKEN set on the RPGGeek provider page; without a token "
+                "this does nothing."
             ),
-        ),
-        TextField(
-            key="RPGEEK_API_TOKEN",
-            label="RPGGeek API token",
-            placeholder="Bearer token from boardgamegeek.com/applications",
-            description=(
-                "Bearer token for the BoardGameGeek/RPGGeek XML API (register your "
-                "application at boardgamegeek.com/applications). Used only to fetch "
-                "manual cover images, at most 2 calls per search, results cached. "
-                "Leave empty to disable cover lookup."
-            ),
-            required=False,
-            env_supported=True,
         ),
     ]

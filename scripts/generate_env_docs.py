@@ -359,6 +359,7 @@ def generate_env_docs() -> str:
     import shelfmark.metadata_providers.googlebooks
     import shelfmark.metadata_providers.hardcover
     import shelfmark.metadata_providers.openlibrary
+    import shelfmark.metadata_providers.rpggeek
     import shelfmark.release_sources.irc.settings
     import shelfmark.release_sources.prowlarr.settings  # noqa: F401
     from shelfmark.core.settings_registry import (
