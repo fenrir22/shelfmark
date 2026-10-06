@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import shelfmark.release_sources.telegram.rpggeek as rpggeek
 from shelfmark.release_sources.telegram.rpggeek import (
+    apply_alias,
     enrich_releases_with_covers,
     normalize_title,
     preview_for_title,
@@ -73,6 +74,30 @@ def test_normalize_title():
     assert normalize_title("DND5e_PHB_ITA.pdf") == "dnd5e phb ita pdf"
     assert normalize_title("  Player's  Handbook! ") == "player s handbook"
     assert normalize_title(None) == ""
+
+
+def test_apply_alias_italian_manuals():
+    assert apply_alias(normalize_title("Manuale del Giocatore")) == (
+        "dungeons dragons player s handbook"
+    )
+    assert (
+        apply_alias(normalize_title("D&D 5e - Manuale del Giocatore ITA"))
+        == "dungeons dragons player s handbook"
+    )
+    assert apply_alias(normalize_title("Guida del Dungeon Master")) == ("dungeon master s guide")
+    assert apply_alias(normalize_title("Player's Handbook")) == "player s handbook"
+
+
+def test_enrich_uses_alias_for_search_and_match(monkeypatch, tmp_path):
+    _with_token(monkeypatch, tmp_path)
+    calls = []
+    _mock_bgg(monkeypatch, calls)
+
+    releases = [_make_release("Manuale del Giocatore")]
+    assert enrich_releases_with_covers(releases, "manuale del giocatore") == 1
+    assert releases[0].extra["preview"].endswith("abc123.jpg")
+    # The API itself was queried with the English alias.
+    assert calls[0][1]["query"] == "dungeons dragons player s handbook"
 
 
 def test_enrich_skipped_without_token(monkeypatch, tmp_path):

@@ -63,6 +63,35 @@ def normalize_title(value: object) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# Common Italian manual titles (as found in file names) mapped to the
+# canonical English query to send to RPGGeek, whose catalogue is English.
+# Keys and values are pre-normalized with normalize_title().
+ITALIAN_TITLE_ALIASES = {
+    "manuale del giocatore": "dungeons dragons player s handbook",
+    "guida del dungeon master": "dungeon master s guide",
+    "manuale del dungeon master": "dungeon master s guide",
+    "manuale dei mostri": "monster manual",
+    "guida di xanathar": "xanathar s guide to everything",
+    "xanathar": "xanathar s guide to everything",
+    "calderone di tasha": "tasha s cauldron of everything",
+    "tasha": "tasha s cauldron of everything",
+    "mordenkainen": "mordenkainen presents monsters of the multiverse",
+    "guida di volo": "volo s guide to monsters",
+    "volo": "volo s guide to monsters",
+    "spada della costa": "sword coast adventurer s guide",
+    "eberron": "eberron rising from the last war",
+    "strahd": "curse of strahd",
+}
+
+
+def apply_alias(normalized: str) -> str:
+    """Return the canonical English title when an Italian alias matches."""
+    for alias, canonical in ITALIAN_TITLE_ALIASES.items():
+        if alias in normalized:
+            return canonical
+    return normalized
+
+
 def _load_cache() -> dict[str, Any]:
     try:
         if CACHE_FILE.exists():
@@ -187,8 +216,16 @@ def preview_for_title(title: object) -> str | None:
     normalized = normalize_title(title)
     if not normalized:
         return None
-    hit = _cached_url(normalized, time.time())
-    return hit if isinstance(hit, str) else None
+    now = time.time()
+    hit = _cached_url(normalized, now)
+    if isinstance(hit, str):
+        return hit
+    aliased = apply_alias(normalized)
+    if aliased != normalized:
+        hit = _cached_url(aliased, now)
+        if isinstance(hit, str):
+            return hit
+    return None
 
 
 def enrich_releases_with_covers(releases: list, query: str) -> int:
@@ -223,13 +260,17 @@ def enrich_releases_with_covers(releases: list, query: str) -> int:
         return attached
 
     try:
-        images = _fetch_images(_search_ids(query))
+        # The catalogue is English: translate known Italian titles so the
+        # search itself can match (e.g. "manuale del giocatore").
+        images = _fetch_images(_search_ids(apply_alias(normalize_title(query))))
     except Exception as exc:  # noqa: BLE001 - enrichment must never break a search
         logger.warning("RPGGeek cover enrichment failed: %s", exc)
         return attached
 
     for index, normalized in pending:
-        url = _best_image_for(normalized, images)
+        url = _best_image_for(normalized, images) or _best_image_for(
+            apply_alias(normalized), images
+        )
         _store_url(normalized, url)
         if url:
             extra = getattr(releases[index], "extra", None)
