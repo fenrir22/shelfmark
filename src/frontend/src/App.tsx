@@ -1618,28 +1618,35 @@ function App() {
     }
 
     if (book.provider && book.provider_id) {
-      try {
-        policyTrace('universal.get:open_release_modal', {
-          bookId: book.id,
-          contentType: normalizedContentType,
-        });
-        const fullBook = await getMetadataBookInfo(book.provider, book.provider_id);
-        setReleaseBook({
-          ...book,
-          description: fullBook.description || book.description,
-          series_id: fullBook.series_id || book.series_id,
-          series_name: fullBook.series_name,
-          series_position: fullBook.series_position,
-          series_count: fullBook.series_count,
-        });
-      } catch (error) {
-        console.error('Failed to load book description, using search data:', error);
-        policyTrace('universal.get:open_release_modal_fallback', {
-          bookId: book.id,
-          contentType: normalizedContentType,
-          message: error instanceof Error ? error.message : String(error),
-        });
+      // Source-backed books (e.g. Telegram group manuals, direct results) have no
+      // metadata provider behind them — open the modal directly instead of
+      // querying a metadata API that could never know them.
+      if (book.source && book.provider === book.source) {
         setReleaseBook(book);
+      } else {
+        try {
+          policyTrace('universal.get:open_release_modal', {
+            bookId: book.id,
+            contentType: normalizedContentType,
+          });
+          const fullBook = await getMetadataBookInfo(book.provider, book.provider_id);
+          setReleaseBook({
+            ...book,
+            description: fullBook.description || book.description,
+            series_id: fullBook.series_id || book.series_id,
+            series_name: fullBook.series_name,
+            series_position: fullBook.series_position,
+            series_count: fullBook.series_count,
+          });
+        } catch (error) {
+          console.error('Failed to load book description, using search data:', error);
+          policyTrace('universal.get:open_release_modal_fallback', {
+            bookId: book.id,
+            contentType: normalizedContentType,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          setReleaseBook(book);
+        }
       }
     } else {
       policyTrace('universal.get:open_release_modal_no_provider', {

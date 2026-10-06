@@ -74,8 +74,65 @@ def test_convert_messages_to_releases_skips_missing_chat():
 
 def test_build_group_source_id():
     source_id = TelegramGroupSource._build_group_source_id(999, 42, "123")
-    assert isinstance(source_id, str)
-    assert len(source_id) == 32
+    assert source_id == "tg:999:42:123"
+
+
+def test_search_results_are_releases():
+    assert TelegramGroupSource().search_results_are_releases() is True
+
+
+def test_get_record_resolves_document(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source = TelegramGroupSource()
+    message = _make_document_message()
+
+    monkeypatch.setattr(source, "is_available", lambda: True)
+    monkeypatch.setattr(tg_source.client_manager, "get_message", lambda chat, msg: message)
+
+    record = source.get_record("tg:999:42:123")
+    assert record is not None
+    assert record.id == "tg:999:42:123"
+    assert record.source == "telegram_group"
+    assert record.title == "Manuale"
+    assert record.format == "pdf"
+
+
+def test_get_record_rejects_bad_ids(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source = TelegramGroupSource()
+    monkeypatch.setattr(source, "is_available", lambda: True)
+    monkeypatch.setattr(
+        tg_source.client_manager,
+        "get_message",
+        lambda chat, msg: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+
+    assert source.get_record("not-an-id") is None
+    assert source.get_record("xx:999:42:123") is None
+    assert source.get_record("tg:abc:42:123") is None
+
+
+def test_get_record_rejects_missing_or_mismatched_document(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source = TelegramGroupSource()
+    monkeypatch.setattr(source, "is_available", lambda: True)
+
+    # No message found
+    monkeypatch.setattr(tg_source.client_manager, "get_message", lambda chat, msg: None)
+    assert source.get_record("tg:999:42:123") is None
+
+    # Document id mismatch (message edited/replaced)
+    monkeypatch.setattr(
+        tg_source.client_manager, "get_message", lambda chat, msg: _make_document_message()
+    )
+    assert source.get_record("tg:999:42:999") is None
+
+    # Source unavailable
+    monkeypatch.setattr(source, "is_available", lambda: False)
+    assert source.get_record("tg:999:42:123") is None
 
 
 def test_is_available_requires_enabled_and_connected(monkeypatch):

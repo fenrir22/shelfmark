@@ -114,6 +114,7 @@ export const it = {
   'search_books': 'Cerca Libri',
   'search_audiobooks': 'Cerca Audiolibri',
   'search_manuals': 'Cerca Manuali',
+  'manuale_requires_telegram': 'La ricerca manuali richiede il gruppo Telegram configurato (Impostazioni → Telegram).',
   'search_releases_directly': 'Cerca rilasci direttamente...',
   'search_by': 'Cerca per',
   'search_releases': 'Cerca rilasci',

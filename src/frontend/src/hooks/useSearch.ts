@@ -3,8 +3,14 @@ import { useNavigate } from 'react-router-dom';
 
 import { DEFAULT_SUPPORTED_FORMATS } from '../data/languages';
 import { t } from '../i18n';
-import { searchBooks, searchMetadata, AuthenticationError } from '../services/api';
+import {
+  getReleases,
+  searchBooks,
+  searchMetadata,
+  AuthenticationError,
+} from '../services/api';
 import type { Book, AppConfig, AdvancedFilterState, ContentType, SearchMode } from '../types';
+import { transformReleaseToDirectBook } from '../utils/bookTransformers';
 import { LANGUAGE_OPTION_DEFAULT } from '../utils/languageFilters';
 import { describeSearchFailure } from '../utils/searchFailureMessage';
 
@@ -194,6 +200,77 @@ export function useSearch(options: UseSearchOptions): UseSearchReturn {
     }) => {
       const effectiveContentType = contentTypeOverride ?? contentType;
       const searchMode = (searchModeOverride ?? config?.search_mode) || 'universal';
+
+      // Manuals live in the Telegram group, not in book metadata providers:
+      // search the group's message history directly (browse mode) instead of
+      // running a metadata search that could never match a manual.
+      if (effectiveContentType === 'manuale') {
+        const params = new URLSearchParams(query);
+        const searchQuery = params.get('query') || '';
+        if (config && config.telegram_group_enabled === false) {
+          setBooks([]);
+          setLastSearchQuery('');
+          setHasMore(false);
+          setTotalFound(0);
+          setDirectTotalResults(null);
+          setResultsSourceUrl(undefined);
+          setResultsSourceTitle(undefined);
+          showToast(t('manuale_requires_telegram'), 'error');
+          return;
+        }
+        if (!searchQuery) {
+          setBooks([]);
+          setLastSearchQuery('');
+          setHasMore(false);
+          setTotalFound(0);
+          setDirectTotalResults(null);
+          setResultsSourceUrl(undefined);
+          setResultsSourceTitle(undefined);
+          return;
+        }
+
+        setIsSearching(true);
+        setLastSearchQuery(query);
+
+        try {
+          const response = await getReleases(
+            '',
+            '',
+            'telegram_group',
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            'manuale',
+            undefined,
+            undefined,
+            undefined,
+            searchQuery,
+          );
+          const results = response.releases.map(transformReleaseToDirectBook);
+          if (results.length > 0) {
+            setBooks(results);
+            setHasMore(false);
+            setTotalFound(results.length);
+            setDirectTotalResults(null);
+            setResultsSourceUrl(undefined);
+            setResultsSourceTitle(undefined);
+          } else {
+            setBooks([]);
+            setHasMore(false);
+            setTotalFound(0);
+            setDirectTotalResults(null);
+            setResultsSourceUrl(undefined);
+            setResultsSourceTitle(undefined);
+            showToast(t('no_results_found'), 'error');
+          }
+        } catch (error) {
+          handleSearchError(error, 'Search failed');
+        } finally {
+          setIsSearching(false);
+        }
+        return;
+      }
 
       // In universal mode, check if we have either a query or field values
       if (searchMode === 'universal') {

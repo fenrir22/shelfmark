@@ -15,6 +15,7 @@ from shelfmark.api.websocket import ws_manager
 from shelfmark.core.config import config
 from shelfmark.core.logger import setup_logger
 from shelfmark.release_sources import (
+    BrowseRecord,
     ColumnColorHint,
     ColumnRenderType,
     ColumnSchema,
@@ -443,6 +444,62 @@ class TelegramGroupSource(TelegramSource):
     display_name = "Telegram Group"
     supported_content_types: ClassVar[list[str]] = ["manuale", "ebook"]
 
+    def search_results_are_releases(self) -> bool:
+        """Group history entries already map to concrete downloadable releases."""
+        return True
+
+    def get_record(
+        self, record_id: str, *, fetch_download_count: bool = True
+    ) -> BrowseRecord | None:
+        """Resolve one group document by its reversible id.
+
+        Ids look like ``tg:{chat_id}:{message_id}:{document_id}`` (see
+        :meth:`_build_group_source_id`). Returns None when the id is
+        malformed, the group is unavailable, or the message has no matching
+        document.
+        """
+        try:
+            kind, chat_raw, message_raw, document_id = str(record_id).split(":", 3)
+        except ValueError:
+            return None
+        if kind != "tg" or not document_id:
+            return None
+        try:
+            chat_id = int(chat_raw)
+            message_id = int(message_raw)
+        except ValueError:
+            return None
+
+        if not self.is_available():
+            return None
+
+        message = client_manager.get_message(chat_id, message_id)
+        if message is None:
+            return None
+        document = getattr(message, "document", None)
+        if document is None or str(getattr(document, "id", "")) != document_id:
+            logger.debug("Telegram group record %s no longer has its document", record_id)
+            return None
+
+        file_name = None
+        for attr in getattr(document, "attributes", []) or []:
+            if getattr(attr, "file_name", None):
+                file_name = attr.file_name
+                break
+
+        title = (
+            str(Path(file_name).stem) if file_name else (getattr(message, "text", "") or "Unknown")
+        )
+        extension = Path(file_name).suffix.lstrip(".").lower() if file_name else None
+
+        return BrowseRecord(
+            id=record_id,
+            title=str(title),
+            source="telegram_group",
+            format=extension or "file",
+            size=_humanize_size(getattr(document, "size", None)),
+        )
+
     def is_available(self) -> bool:
         enabled = _config_bool("TELEGRAM_GROUP_ENABLED", False)
         if not enabled:
@@ -634,5 +691,6 @@ class TelegramGroupSource(TelegramSource):
 
     @staticmethod
     def _build_group_source_id(chat_id: int, message_id: int, document_id: str) -> str:
-        raw = f"tg:{chat_id}:{message_id}:{document_id}"
-        return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+        # Reversible id so a result can be reopened later via get_record()
+        # (e.g. ReleaseModal on a source-backed book, or the records endpoint).
+        return f"tg:{chat_id}:{message_id}:{document_id}"
