@@ -493,12 +493,21 @@ class TelegramGroupSource(TelegramSource):
         )
         extension = Path(file_name).suffix.lstrip(".").lower() if file_name else None
 
+        preview = None
+        try:
+            from .rpggeek import preview_for_title
+
+            preview = preview_for_title(title)
+        except Exception:
+            logger.debug("RPGGeek cover lookup skipped", exc_info=True)
+
         return BrowseRecord(
             id=record_id,
             title=str(title),
             source="telegram_group",
             format=extension or "file",
             size=_humanize_size(getattr(document, "size", None)),
+            preview=preview,
         )
 
     def is_available(self) -> bool:
@@ -634,6 +643,15 @@ class TelegramGroupSource(TelegramSource):
 
             releases = self._convert_messages_to_releases(messages, content_type)
             releases = self._filter_by_content_type(releases, content_type)
+
+            if content_type == "manuale":
+                # Covers are best-effort decoration: never let them break a search.
+                try:
+                    from .rpggeek import enrich_releases_with_covers
+
+                    enrich_releases_with_covers(releases, query)
+                except Exception:
+                    logger.debug("RPGGeek cover enrichment skipped", exc_info=True)
 
             cache_results(query_key, query, releases)
 
