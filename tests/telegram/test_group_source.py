@@ -339,6 +339,143 @@ def test_supported_content_types():
     assert set(TelegramGroupSource.supported_content_types) == {"manuale", "ebook"}
 
 
+def _make_search_testbed(monkeypatch, tg_source, group="@rpg_manuals", channel=""):
+    source = TelegramGroupSource()
+    entity = object()
+
+    def fake_config_text(key):
+        if key == "TELEGRAM_GROUP_USERNAME":
+            return group
+        if key == "TELEGRAM_GROUP_CHANNEL":
+            return channel
+        return ""
+
+    monkeypatch.setattr(source, "is_available", lambda: True)
+    monkeypatch.setattr(tg_source, "_config_text", fake_config_text)
+    monkeypatch.setattr(tg_source, "_config_int", lambda key, default=50: default)
+    monkeypatch.setattr(tg_source, "get_cached_results", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "cache_results", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "_emit_status", lambda *a, **k: None)
+    monkeypatch.setattr(tg_source, "_enforce_rate_limit", lambda: None)
+    monkeypatch.setattr(tg_source.client_manager, "resolve_bot_entity", lambda g: entity)
+    monkeypatch.setattr(tg_source.client_manager, "resolve_dialog_by_title", lambda t: None)
+    return source, entity
+
+
+def test_search_falls_back_to_cleaned_query(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source, _entity = _make_search_testbed(monkeypatch, tg_source)
+    attempted = []
+
+    stem = "D&D_5e_PHB_Manuale_Giocatore_HQ_2021"
+    hit = _make_document_message(message_id=7, chat_id=999, file_name="Manuale_Giocatore.pdf")
+
+    def fake_search(entity_arg, query, limit=50, reply_to=None, add_offset=0):
+        attempted.append(query)
+        return [hit] if query != stem else []
+
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", fake_search)
+
+    book = BookMetadata(provider="test", provider_id="123", title="Manuale Giocatore")
+    plan = SimpleNamespace(primary_query=stem)
+
+    releases = source.search(book, plan, content_type="manuale")
+    assert len(releases) == 1
+    assert releases[0].title == "Manuale_Giocatore"
+    # Raw stem first, cleaned filename second (no underscores/edition tags).
+    assert attempted[0] == stem
+    assert attempted[1] == "D&D 5e PHB Manuale Giocatore"
+
+
+def test_search_caches_winning_query_for_pagination(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source, _entity = _make_search_testbed(monkeypatch, tg_source)
+    stored = {}
+
+    def fake_cache_results(key, query, releases):
+        stored["key"] = key
+        stored["query"] = query
+
+    monkeypatch.setattr(tg_source, "cache_results", fake_cache_results)
+
+    hit = _make_document_message(message_id=7, chat_id=999, file_name="Guida.pdf")
+
+    def fake_search(entity_arg, query, limit=50, reply_to=None, add_offset=0):
+        return [hit] if query != "Guida X HQ" else []
+
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", fake_search)
+
+    book = BookMetadata(provider="test", provider_id="123", title="Guida")
+    plan = SimpleNamespace(primary_query="Guida X HQ")
+
+    assert len(source.search(book, plan, content_type="manuale")) == 1
+    assert stored["query"] == "Guida"
+
+    # A paged call reuses the winner directly: single attempt, offset kept.
+    seen = []
+
+    def fake_search_paged(entity_arg, query, limit=50, reply_to=None, add_offset=0):
+        seen.append((query, add_offset))
+        return []
+
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", fake_search_paged)
+    monkeypatch.setattr(
+        tg_source,
+        "get_cached_results",
+        lambda *a, **k: {"releases": [], "query": stored["query"]},
+    )
+    assert source.search(book, plan, content_type="manuale", add_offset=10) == []
+    assert seen == [("Guida", 10)]
+
+
+def test_search_local_scan_ignores_unrelated(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source, _entity = _make_search_testbed(monkeypatch, tg_source)
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", lambda *a, **k: [])
+
+    hit = _make_document_message(
+        message_id=9, chat_id=999, file_name="Manuale_del_Giocatore_ITA.pdf"
+    )
+    unrelated = _make_document_message(
+        message_id=10, chat_id=999, file_name="Starship_Catalogue.pdf"
+    )
+    monkeypatch.setattr(
+        tg_source.client_manager,
+        "get_recent_documents",
+        lambda *a, **k: [unrelated, hit],
+    )
+
+    book = BookMetadata(provider="test", provider_id="123", title="zzz qq ww")
+    plan = SimpleNamespace(primary_query="zzz qq ww xyzzy")
+
+    releases = source.search(book, plan, content_type="manuale")
+    # Server attempts miss; local scan is bypassed here because the query has
+    # no significant words in common — sanity: no crash, empty result.
+    assert releases == []
+
+
+def test_local_scan_matches_overlap(monkeypatch):
+    import shelfmark.release_sources.telegram.source as tg_source
+
+    source, _entity = _make_search_testbed(monkeypatch, tg_source)
+    monkeypatch.setattr(tg_source.client_manager, "search_messages", lambda *a, **k: [])
+
+    hit = _make_document_message(
+        message_id=9, chat_id=999, file_name="Manuale_del_Giocatore_ITA.pdf"
+    )
+    monkeypatch.setattr(tg_source.client_manager, "get_recent_documents", lambda *a, **k: [hit])
+
+    book = BookMetadata(provider="test", provider_id="123", title="Giocatore Manuale DnD")
+    plan = SimpleNamespace(primary_query="Giocatore Manuale DnD")
+
+    releases = source.search(book, plan, content_type="manuale")
+    assert len(releases) == 1
+    assert releases[0].extra["message_id"] == 9
+
+
 def test_search_targets_forum_topic(monkeypatch):
     import shelfmark.release_sources.telegram.source as tg_source
 

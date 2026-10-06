@@ -115,6 +115,7 @@ def get_cached_results(
         return {
             "releases": releases,
             "cached_at": cached_at,
+            "query": entry.get("query", ""),
         }
 
 

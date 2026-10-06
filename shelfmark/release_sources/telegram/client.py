@@ -552,6 +552,42 @@ class TelegramClientManager:
             logger.exception("Failed to search messages with query: %s", query)
             return []
 
+    async def _get_recent_documents_async(
+        self,
+        entity: Any,
+        limit: int = 50,
+        reply_to: int | None = None,
+        offset_id: int = 0,
+    ) -> list:
+        from telethon.tl.types import InputMessagesFilterDocument
+
+        return await self._client.get_messages(
+            entity,
+            filter=InputMessagesFilterDocument(),
+            limit=limit,
+            offset_id=offset_id,
+            reply_to=reply_to,
+        )
+
+    def get_recent_documents(
+        self,
+        entity: Any,
+        limit: int = 50,
+        reply_to: int | None = None,
+        offset_id: int = 0,
+    ) -> list:
+        """Fetch recent documents without any text query (for local matching)."""
+        if not self.ensure_connected():
+            return []
+        try:
+            return self._run_sync(
+                self._get_recent_documents_async(entity, limit, reply_to, offset_id),
+                timeout=TELEGRAM_DEFAULT_RESPONSE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("Failed to fetch recent documents")
+            return []
+
     async def _find_forum_topic_async(self, entity: Any, topic_title: str) -> int | None:
         """Find a forum topic's root message id by its title."""
         from telethon.tl.functions.messages import GetForumTopicsRequest

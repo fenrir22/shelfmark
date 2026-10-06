@@ -68,10 +68,16 @@ interface UseReleaseSearchSessionReturn {
 
 const DEFAULT_EXPANDED_STATUS_DELAY_MS = 1500;
 
-function getDefaultManualQuery(book: Book): string {
+const PLACEHOLDER_AUTHORS = new Set(['unknown author', 'unknown', 'sconosciuto']);
+
+export function getDefaultManualQuery(book: Book): string {
   const baseTitle = book.search_title || book.title || '';
   const baseAuthor = book.search_author || book.author || '';
-  return `${baseTitle} ${baseAuthor}`.trim();
+  // Source-backed books (e.g. Telegram results) carry placeholder authors:
+  // sending them to the search API can only empty the results.
+  const author =
+    PLACEHOLDER_AUTHORS.has(baseAuthor.trim().toLowerCase()) ? '' : baseAuthor;
+  return `${baseTitle} ${author}`.trim();
 }
 
 function buildReleaseTabs(

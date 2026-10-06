@@ -633,16 +633,59 @@ class TelegramGroupSource(TelegramSource):
                 logger.info("Searching in linked topic id %s", link_topic_id)
                 reply_to = link_topic_id
 
-            messages = client_manager.search_messages(
-                group_entity,
-                query,
-                limit=search_limit,
-                reply_to=reply_to,
-                add_offset=add_offset,
-            )
+            if add_offset > 0:
+                # Pagination continues the query that produced page one.
+                prior = get_cached_results(query_key)
+                winning_fallback = (prior or {}).get("query") or query
+                attempts = [winning_fallback]
+            else:
+                attempts = self._candidate_queries(query)
 
-            releases = self._convert_messages_to_releases(messages, content_type)
-            releases = self._filter_by_content_type(releases, content_type)
+            releases: list[Release] = []
+            winning_query = attempts[0]
+            for position, attempt in enumerate(attempts):
+                if position:
+                    _enforce_rate_limit()
+                    logger.info(
+                        "Telegram group retry %d/%d with %r",
+                        position + 1,
+                        len(attempts),
+                        attempt,
+                    )
+                    _emit_status(f"Trying '{attempt}'...", phase="searching")
+                messages = client_manager.search_messages(
+                    group_entity,
+                    attempt,
+                    limit=search_limit,
+                    reply_to=reply_to,
+                    add_offset=add_offset,
+                )
+                releases = self._filter_by_content_type(
+                    self._convert_messages_to_releases(messages, content_type),
+                    content_type,
+                )
+                if releases:
+                    winning_query = attempt
+                    break
+
+            if not releases and add_offset == 0:
+                # Server search needs every word to match: file names and
+                # captions rarely share the full vocabulary. As a last resort
+                # scan recent documents and match locally by word overlap.
+                _enforce_rate_limit()
+                logger.info("Telegram group falling back to local scan for %r", query)
+                _emit_status("Scanning recent documents...", phase="searching")
+                recent = client_manager.get_recent_documents(
+                    group_entity,
+                    limit=max(search_limit, 100),
+                    reply_to=reply_to,
+                )
+                releases = self._filter_by_content_type(
+                    self._convert_messages_to_releases(
+                        self._local_scan_matches(recent, query), content_type
+                    ),
+                    content_type,
+                )
 
             if content_type == "manuale":
                 # Covers are best-effort decoration: never let them break a search.
@@ -653,7 +696,7 @@ class TelegramGroupSource(TelegramSource):
                 except Exception:
                     logger.debug("RPGGeek cover enrichment skipped", exc_info=True)
 
-            cache_results(query_key, query, releases)
+            cache_results(query_key, winning_query, releases)
 
             _emit_status(f"Found {len(releases)} results", phase="complete")
         except Exception:
@@ -662,6 +705,59 @@ class TelegramGroupSource(TelegramSource):
             return []
         else:
             return releases
+
+    @staticmethod
+    def _candidate_queries(raw_query: str) -> list[str]:
+        """Server-search attempts, most literal first.
+
+        File-name stems (underscores, edition tags, years) almost never match
+        a caption verbatim, so retry cleaned and aliased variants before
+        giving up.
+        """
+        from shelfmark.metadata_providers.rpggeek import apply_alias, normalize_title
+
+        from .openlibrary import clean_title_for_search
+
+        candidates = []
+        for text in (
+            raw_query,
+            clean_title_for_search(raw_query),
+            apply_alias(normalize_title(raw_query)),
+        ):
+            stripped = (text or "").strip()
+            if stripped and stripped not in candidates:
+                candidates.append(stripped)
+        return candidates or [raw_query]
+
+    @staticmethod
+    def _local_scan_matches(messages: list, raw_query: str) -> list:
+        """Keep documents sharing enough significant words with the query."""
+        from shelfmark.metadata_providers.rpggeek import normalize_title
+
+        from .openlibrary import STOPWORDS
+
+        wanted = [
+            word
+            for word in normalize_title(raw_query).split()
+            if len(word) > 2 and word not in STOPWORDS and not word.isdigit()
+        ]
+        if not wanted:
+            return []
+        required = max(2, (len(wanted) + 1) // 2)
+        hits = []
+        for message in messages:
+            file_name = ""
+            for attr in getattr(getattr(message, "document", None), "attributes", []) or []:
+                if getattr(attr, "file_name", None):
+                    file_name = attr.file_name
+                    break
+            haystack = set(
+                normalize_title(f"{getattr(message, 'text', '') or ''} {file_name}").split()
+            )
+            overlap = sum(1 for word in wanted if word in haystack)
+            if overlap >= required:
+                hits.append(message)
+        return hits
 
     def _convert_messages_to_releases(
         self, messages: list, content_type: str = "manuale"
