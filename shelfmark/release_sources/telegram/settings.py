@@ -365,9 +365,9 @@ def telegram_group_settings() -> list[SettingsField]:
             label="RPGGeek covers for manuals",
             default=True,
             description=(
-                "Look up cover images on RPGGeek for manuale results. Requires an "
-                "RPGEEK_API_TOKEN set on the RPGGeek provider page; without a token "
-                "this does nothing."
+                "Look up cover images for manuale results: RPGGeek when an "
+                "RPGEEK_API_TOKEN is set on the RPGGeek provider page, otherwise "
+                "the free Open Library lookup. Without any match this does nothing."
             ),
         ),
     ]

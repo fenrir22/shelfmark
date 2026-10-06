@@ -67,7 +67,7 @@ def _options(**kwargs):
 
 
 def test_normalize_and_alias():
-    assert normalize_title("D&D_5e_PHB_ITA.pdf") == "d d 5e phb ita pdf"
+    assert normalize_title("D&D_5e_PHB_ITA.pdf") == "dungeons dragons 5e phb ita pdf"
     assert apply_alias(normalize_title("Manuale del Giocatore")) == (
         "dungeons dragons player s handbook"
     )

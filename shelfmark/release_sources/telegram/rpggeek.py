@@ -34,6 +34,8 @@ HIT_TTL = 180 * 24 * 60 * 60
 MISS_TTL = 7 * 24 * 60 * 60
 MAX_CACHE_ENTRIES = 2000
 MAX_CANDIDATES = 10
+# Open Library fallback (no token): one call per title, keep it bounded.
+MAX_FALLBACK_ITEMS = 8
 
 _cache_lock = Lock()
 
@@ -41,10 +43,6 @@ _cache_lock = Lock()
 def _get_token() -> str:
     value = config.get("RPGEEK_API_TOKEN", "")
     return str(value or "").strip()
-
-
-def _covers_enabled() -> bool:
-    return bool(config.get("RPGEEK_COVERS_ENABLED", True)) and bool(_get_token())
 
 
 def _load_cache() -> dict[str, Any]:
@@ -119,12 +117,13 @@ def preview_for_title(title: object) -> str | None:
 def enrich_releases_with_covers(releases: list, query: str) -> int:
     """Attach ``extra['preview']`` covers to manuale releases. Returns count.
 
-    No token, no releases, or any failure → 0 and releases untouched.
-    At most 2 BGG calls (search + batched thing) per invocation.
+    RPGGeek when a token is configured, otherwise the free Open Library
+    fallback. No releases, disabled covers, or any failure → 0 and releases
+    untouched.
     """
     if not releases or not (query or "").strip():
         return 0
-    if not _covers_enabled():
+    if not bool(config.get("RPGEEK_COVERS_ENABLED", True)):
         return 0
 
     now = time.time()
@@ -147,6 +146,14 @@ def enrich_releases_with_covers(releases: list, query: str) -> int:
     if not pending:
         return attached
 
+    if _get_token():
+        return attached + _enrich_via_rpggeek(releases, query, pending)
+    return attached + _enrich_via_openlibrary(releases, pending)
+
+
+def _enrich_via_rpggeek(releases: list, query: str, pending: list[tuple[int, str]]) -> int:
+    """RPGGeek path: at most 2 calls (search + batched thing)."""
+    attached = 0
     try:
         # The catalogue is English: translate known Italian titles so the
         # search itself can match (e.g. "manuale del giocatore").
@@ -162,6 +169,28 @@ def enrich_releases_with_covers(releases: list, query: str) -> int:
         url = _best_image_for(normalized, images) or _best_image_for(
             apply_alias(normalized), images
         )
+        _store_url(normalized, url)
+        if url:
+            extra = getattr(releases[index], "extra", None)
+            if isinstance(extra, dict):
+                extra["preview"] = url
+                attached += 1
+    return attached
+
+
+def _enrich_via_openlibrary(releases: list, pending: list[tuple[int, str]]) -> int:
+    """Free fallback path (no token): one Open Library call per title."""
+    from .openlibrary import fetch_cover_url
+
+    attached = 0
+    for index, normalized in pending[:MAX_FALLBACK_ITEMS]:
+        try:
+            url = fetch_cover_url(
+                getattr(releases[index], "title", ""), normalized, normalize_title
+            )
+        except Exception as exc:  # noqa: BLE001 - enrichment must never break a search
+            logger.warning("Open Library cover enrichment failed: %s", exc)
+            continue
         _store_url(normalized, url)
         if url:
             extra = getattr(releases[index], "extra", None)

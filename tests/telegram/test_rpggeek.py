@@ -30,9 +30,55 @@ def _item(name, image):
 
 def test_enrich_skipped_without_token(monkeypatch, tmp_path):
     _with_token(monkeypatch, tmp_path, token="")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("must not call network")
+
+    monkeypatch.setattr(rpggeek, "search_items", boom)
+    import shelfmark.release_sources.telegram.openlibrary as ol_module
+
+    monkeypatch.setattr(ol_module, "fetch_cover_url", boom)
     releases = [_make_release("Player's Handbook")]
     assert enrich_releases_with_covers(releases, "dnd") == 0
     assert "preview" not in releases[0].extra
+
+
+def test_enrich_falls_back_to_openlibrary_without_token(monkeypatch, tmp_path):
+    _with_token(monkeypatch, tmp_path, token="")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("must not call RPGGeek")
+
+    monkeypatch.setattr(rpggeek, "search_items", boom)
+    import shelfmark.release_sources.telegram.openlibrary as ol_module
+
+    monkeypatch.setattr(
+        ol_module, "fetch_cover_url", lambda *a, **k: "https://ol.example/cover.jpg"
+    )
+    releases = [_make_release("Manuale del Giocatore")]
+    assert enrich_releases_with_covers(releases, "manuale del giocatore") == 1
+    assert releases[0].extra["preview"] == "https://ol.example/cover.jpg"
+
+
+def test_enrich_prefers_rpggeek_with_token(monkeypatch, tmp_path):
+    _with_token(monkeypatch, tmp_path)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("must not call Open Library")
+
+    import shelfmark.release_sources.telegram.openlibrary as ol_module
+
+    monkeypatch.setattr(ol_module, "fetch_cover_url", boom)
+
+    def fake_search_items(query, token, limit=10):
+        return [
+            _item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")
+        ]
+
+    monkeypatch.setattr(rpggeek, "search_items", fake_search_items)
+    releases = [_make_release("Dungeons & Dragons Player's Handbook")]
+    assert enrich_releases_with_covers(releases, "dnd players handbook") == 1
+    assert releases[0].extra["preview"] == "https://img.example/phb.jpg"
 
 
 def test_enrich_attaches_matching_cover(monkeypatch, tmp_path):

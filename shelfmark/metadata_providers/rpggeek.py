@@ -72,6 +72,11 @@ def normalize_title(value: object) -> str:
     """Normalize a title for fuzzy comparison (lowercase, alnum only)."""
     text = str(value or "").lower()
     text = re.sub(r"[^a-z0-9 ]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    # "D&D" / "DND" never literally match "Dungeons & Dragons": expand them.
+    text = re.sub(r"\bd\s*d\b", "dungeons dragons", text)
+    text = re.sub(r"\bdnd5e\b", "dungeons dragons 5e", text)
+    text = re.sub(r"\bdnd\b", "dungeons dragons", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
