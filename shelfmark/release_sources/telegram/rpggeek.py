@@ -157,8 +157,13 @@ def _enrich_via_rpggeek(releases: list, query: str, pending: list[tuple[int, str
     try:
         # The catalogue is English: translate known Italian titles so the
         # search itself can match (e.g. "manuale del giocatore").
+        # Strict mode raises on transport failures so a network blip is
+        # never cached as a definitive miss.
         items = search_items(
-            apply_alias(normalize_title(query)), _get_token(), limit=MAX_CANDIDATES
+            apply_alias(normalize_title(query)),
+            _get_token(),
+            limit=MAX_CANDIDATES,
+            strict=True,
         )
         images = {normalize_title(item.name): item.image for item in items if item.image}
     except Exception as exc:  # noqa: BLE001 - enrichment must never break a search
@@ -186,9 +191,7 @@ def _enrich_via_openlibrary(releases: list, pending: list[tuple[int, str]]) -> i
     for index, normalized in pending[:MAX_FALLBACK_ITEMS]:
         # The catalogue is English: translate known Italian titles first.
         aliased = apply_alias(normalized)
-        query_text = aliased if aliased != normalized else getattr(
-            releases[index], "title", ""
-        )
+        query_text = aliased if aliased != normalized else getattr(releases[index], "title", "")
         try:
             url = fetch_cover_url(query_text, normalized, normalize_title)
         except Exception as exc:  # noqa: BLE001 - enrichment must never break a search

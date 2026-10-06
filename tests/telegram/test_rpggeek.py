@@ -70,10 +70,8 @@ def test_enrich_prefers_rpggeek_with_token(monkeypatch, tmp_path):
 
     monkeypatch.setattr(ol_module, "fetch_cover_url", boom)
 
-    def fake_search_items(query, token, limit=10):
-        return [
-            _item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")
-        ]
+    def fake_search_items(query, token, limit=10, strict=False):
+        return [_item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")]
 
     monkeypatch.setattr(rpggeek, "search_items", fake_search_items)
     releases = [_make_release("Dungeons & Dragons Player's Handbook")]
@@ -85,7 +83,7 @@ def test_enrich_attaches_matching_cover(monkeypatch, tmp_path):
     _with_token(monkeypatch, tmp_path)
     calls = []
 
-    def fake_search_items(query, token, limit=10):
+    def fake_search_items(query, token, limit=10, strict=False):
         calls.append((query, token))
         assert token == "test-token"
         return [_item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")]
@@ -102,7 +100,7 @@ def test_enrich_uses_alias_for_search_and_match(monkeypatch, tmp_path):
     _with_token(monkeypatch, tmp_path)
     calls = []
 
-    def fake_search_items(query, token, limit=10):
+    def fake_search_items(query, token, limit=10, strict=False):
         calls.append(query)
         return [_item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")]
 
@@ -118,7 +116,7 @@ def test_enrich_uses_alias_for_search_and_match(monkeypatch, tmp_path):
 def test_enrich_caches_miss_and_reuses_cache(monkeypatch, tmp_path):
     _with_token(monkeypatch, tmp_path)
 
-    def fake_search_items(query, token, limit=10):
+    def fake_search_items(query, token, limit=10, strict=False):
         return [_item("Dungeons & Dragons Player's Handbook", "https://img.example/phb.jpg")]
 
     monkeypatch.setattr(rpggeek, "search_items", fake_search_items)
@@ -154,6 +152,23 @@ def test_enrich_survives_provider_failure(monkeypatch, tmp_path):
     releases = [_make_release("Player's Handbook")]
     assert enrich_releases_with_covers(releases, "dnd") == 0
     assert "preview" not in releases[0].extra
+
+
+def test_transport_failure_is_not_cached_as_miss(monkeypatch, tmp_path):
+    """A network blip must not poison the cache for days."""
+    _with_token(monkeypatch, tmp_path, token="")
+
+    import shelfmark.release_sources.telegram.openlibrary as ol_module
+
+    def failing_fetch(*args, **kwargs):
+        raise TimeoutError("blip")
+
+    monkeypatch.setattr(ol_module, "fetch_cover_url", failing_fetch)
+    releases = [_make_release("Manuale del Giocatore")]
+    assert enrich_releases_with_covers(releases, "manuale del giocatore") == 0
+
+    cache = rpggeek._load_cache()
+    assert cache.get("entries", {}) == {}
 
 
 def test_preview_for_title_cache_only(monkeypatch, tmp_path):

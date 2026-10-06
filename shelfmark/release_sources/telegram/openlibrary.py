@@ -167,6 +167,8 @@ def fetch_cover_url(
         wait = MIN_CALL_GAP - (time.time() - _last_call_time)
         if wait > 0:
             time.sleep(wait)
+        # NOTE: transport/parse errors propagate on purpose: the caller must
+        # NOT cache them as misses (a network blip is not a missing cover).
         try:
             response = requests.get(
                 SEARCH_URL,
@@ -181,12 +183,6 @@ def fetch_cover_url(
             )
             response.raise_for_status()
             docs = response.json().get("docs", [])
-        except requests.RequestException as exc:
-            logger.warning("Open Library cover search failed: %s", exc)
-            return None
-        except ValueError as exc:
-            logger.warning("Open Library returned invalid JSON: %s", exc)
-            return None
         finally:
             _last_call_time = time.time()
     for doc in docs:

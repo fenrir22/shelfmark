@@ -1,5 +1,7 @@
 """Tests for the RPGGeek metadata provider (token-gated, best-effort)."""
 
+import pytest
+
 from shelfmark.metadata_providers import (
     MetadataSearchOptions,
     SearchType,
@@ -101,6 +103,23 @@ def test_search_items_no_token_no_calls(monkeypatch):
     monkeypatch.setattr(provider_module.requests, "get", boom)
     assert search_items("dnd", "") == []
     assert fetch_item("312234", "") is None
+
+
+def test_search_items_strict_raises_on_transport_failure(monkeypatch):
+    import requests
+
+    import shelfmark.metadata_providers.rpggeek as provider_module
+    from shelfmark.metadata_providers.rpggeek import BGGTransportError
+
+    def failing_get(*args, **kwargs):
+        raise requests.Timeout("blip")
+
+    monkeypatch.setattr(provider_module.requests, "get", failing_get)
+    # Lenient mode: empty, no raise (provider UI behavior unchanged).
+    assert search_items("dnd", "test-token") == []
+    # Strict mode: callers can tell a blip apart from a definitive miss.
+    with pytest.raises(BGGTransportError):
+        search_items("dnd", "test-token", strict=True)
 
 
 def test_provider_search_maps_books(monkeypatch):

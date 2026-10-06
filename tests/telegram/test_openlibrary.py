@@ -1,5 +1,7 @@
 """Tests for the free Open Library cover fallback (no token needed)."""
 
+import pytest
+
 import shelfmark.release_sources.telegram.openlibrary as ol
 from shelfmark.metadata_providers.rpggeek import normalize_title
 from shelfmark.release_sources.telegram.openlibrary import (
@@ -69,11 +71,13 @@ def test_fetch_cover_url_rejects_wrong_book(monkeypatch):
     assert url is None
 
 
-def test_fetch_cover_url_survives_failure(monkeypatch):
+def test_fetch_cover_url_propagates_transport_failure(monkeypatch):
+    """Transport failures must propagate (caller skips caching, not a miss)."""
     import requests
 
     def failing_get(*args, **kwargs):
         raise requests.Timeout("slow")
 
     monkeypatch.setattr(ol.requests, "get", failing_get)
-    assert fetch_cover_url("Player's Handbook", "player s handbook", str) is None
+    with pytest.raises(requests.Timeout):
+        fetch_cover_url("Player's Handbook", "player s handbook", str)

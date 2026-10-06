@@ -57,6 +57,14 @@ _call_lock = threading.Lock()
 _last_call_time: float = 0.0
 
 
+class BGGTransportError(Exception):
+    """Raised (strict mode only) when the BGG API cannot be reached.
+
+    Lets callers tell a network failure apart from "no such item", so only
+    definitive misses get cached.
+    """
+
+
 @dataclass
 class RpgItem:
     """One RPGGeek catalogue entry."""
@@ -115,8 +123,14 @@ def _get_token(explicit: str | None = None) -> str:
     return str(app_config.get("RPGEEK_API_TOKEN", "") or "").strip()
 
 
-def _authed_get(path: str, params: dict[str, str], api_token: str) -> ET.Element | None:
-    """One throttled, authenticated BGG call. Returns the XML root or None."""
+def _authed_get(
+    path: str, params: dict[str, str], api_token: str, *, strict: bool = False
+) -> ET.Element | None:
+    """One throttled, authenticated BGG call. Returns the XML root or None.
+
+    With ``strict=True`` transport failures raise :class:`BGGTransportError`
+    instead of returning None.
+    """
     global _last_call_time
     with _call_lock:
         wait = MIN_CALL_GAP - (time.time() - _last_call_time)
@@ -135,8 +149,10 @@ def _authed_get(path: str, params: dict[str, str], api_token: str) -> ET.Element
             )
             response.raise_for_status()
             return ET.fromstring(response.content)
-        except requests.Timeout:
+        except requests.Timeout as exc:
             logger.warning("RPGGeek API call timed out (%s)", path)
+            if strict:
+                raise BGGTransportError(str(exc)) from exc
             return None
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code == HTTPStatus.UNAUTHORIZED:
@@ -146,21 +162,29 @@ def _authed_get(path: str, params: dict[str, str], api_token: str) -> ET.Element
                 )
             else:
                 logger.warning("RPGGeek API HTTP error (%s): %s", path, exc)
+            if strict:
+                raise BGGTransportError(str(exc)) from exc
             return None
         except requests.RequestException as exc:
             logger.warning("RPGGeek API request failed (%s): %s", path, exc)
+            if strict:
+                raise BGGTransportError(str(exc)) from exc
             return None
         except ET.ParseError as exc:
             logger.warning("RPGGeek API returned invalid XML (%s): %s", path, exc)
+            if strict:
+                raise BGGTransportError(str(exc)) from exc
             return None
         finally:
             _last_call_time = time.time()
 
 
-def _search_ids(query: str, api_token: str) -> list[str]:
-    root = _authed_get("/search", {"query": query.strip(), "type": "rpgitem"}, api_token)
+def _search_ids(query: str, api_token: str, *, strict: bool = False) -> list[str] | None:
+    root = _authed_get(
+        "/search", {"query": query.strip(), "type": "rpgitem"}, api_token, strict=strict
+    )
     if root is None:
-        return []
+        return None if strict else []
     ids = []
     for item in root.findall("item"):
         item_id = item.get("id")
@@ -204,16 +228,28 @@ def _parse_item(element: ET.Element) -> RpgItem | None:
     )
 
 
-def search_items(query: str, api_token: str, *, limit: int = MAX_CANDIDATES) -> list[RpgItem]:
-    """Search RPG items (1 search + 1 batched thing call). Empty on failure."""
+def search_items(
+    query: str, api_token: str, *, limit: int = MAX_CANDIDATES, strict: bool = False
+) -> list[RpgItem]:
+    """Search RPG items (1 search + 1 batched thing call).
+
+    Returns [] on failure (or when nothing matches). With ``strict=True``
+    transport failures raise :class:`BGGTransportError` instead, so callers
+    can avoid caching a network blip as a definitive miss.
+    """
     token = _get_token(api_token)
     if not token or not (query or "").strip():
         return []
-    ids = _search_ids(query.strip(), token)[: min(max(limit, 1), MAX_THING_BATCH)]
+    ids = _search_ids(query.strip(), token, strict=strict)
+    if ids is None:
+        raise BGGTransportError("search request failed")
+    ids = ids[: min(max(limit, 1), MAX_THING_BATCH)]
     if not ids:
         return []
-    root = _authed_get("/thing", {"id": ",".join(ids), "stats": "0"}, token)
+    root = _authed_get("/thing", {"id": ",".join(ids), "stats": "0"}, token, strict=strict)
     if root is None:
+        if strict:
+            raise BGGTransportError("thing request failed")
         return []
     items = []
     for element in root.findall("item"):
