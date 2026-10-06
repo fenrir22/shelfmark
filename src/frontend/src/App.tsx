@@ -1447,6 +1447,12 @@ function App() {
 
   // Direct-mode action (download or release-level request based on policy).
   const handleDownload = async (book: Book): Promise<void> => {
+    // Source-backed Telegram books carry no direct payload (message ids live
+    // in release extras): route them to the releases modal like Get does.
+    if (book.provider === 'telegram_group' || book.source === 'telegram_group') {
+      await handleGetReleases(book);
+      return;
+    }
     const source = getBrowseSource(book);
     const directContentType: ContentType = 'ebook';
     let mode = getDirectPolicyMode(book);
